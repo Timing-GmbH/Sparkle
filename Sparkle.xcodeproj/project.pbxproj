@@ -1566,7 +1566,6 @@
 			isa = PBXGroup;
 			children = (
 				65A04E0F23014E8E003310B3 /* Updater.entitlements */,
-				7205C43F1E13049400E370AE /* generate_appcast */,
 				1495006D195FBBBD00BC5B5B /* Sparkle */,
 				EA1E288122B6688A004AA304 /* Command Line Tools */,
 				14732BB81960EEB600593899 /* Resources */,
