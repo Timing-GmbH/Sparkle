@@ -48,6 +48,7 @@ class ArchiveItem: CustomStringConvertible {
     var dsaSignature: String?
     var edSignature: String?
     var downloadUrlPrefix: URL?
+    var releaseNotesURLPrefix: URL?
 
     init(version: String, shortVersion: String?, feedURL: URL?, minimumSystemVersion: String?, publicEdKey: String?, supportsDSA: Bool, appPath: URL, archivePath: URL) throws {
         self.version = version
@@ -62,7 +63,8 @@ class ArchiveItem: CustomStringConvertible {
         } else {
             self.publicEdKey = nil
         }
-        self.archiveFileAttributes = try FileManager.default.attributesOfItem(atPath: self.archivePath.path)
+        let path = (self.archivePath.path as NSString).resolvingSymlinksInPath
+        self.archiveFileAttributes = try FileManager.default.attributesOfItem(atPath: path)
         self.deltas = []
     }
 
@@ -185,17 +187,24 @@ class ArchiveItem: CustomStringConvertible {
         if self.getReleaseNotesAsHTMLFragment(path) != nil {
             return nil
         }
-        guard let escapedFilename = path.lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+        return self.releaseNoteURL(for: path.lastPathComponent)
+    }
+    
+    func releaseNoteURL(for unescapedFilename: String) -> URL? {
+        guard let escapedFilename = unescapedFilename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
             return nil
         }
-        if let relative = self.feedURL {
-            return URL(string: escapedFilename, relativeTo: relative)
+        if let releaseNotesURLPrefix = self.releaseNotesURLPrefix {
+            // If a URL prefix for release notes was passed on the commandline, use it
+            return URL(string: escapedFilename, relativeTo: releaseNotesURLPrefix)
+        } else if let relativeURL = self.feedURL {
+            return URL(string: escapedFilename, relativeTo: relativeURL)
+        } else {
+            return URL(string: escapedFilename)
         }
-        return URL(string: escapedFilename)
     }
 
     func localizedReleaseNotes() -> [(String, URL)] {
-        let fileManager = FileManager.default
         var basename = archivePath.deletingPathExtension()
         if basename.pathExtension == "tar" {
             basename = basename.deletingPathExtension()
@@ -205,8 +214,10 @@ class ArchiveItem: CustomStringConvertible {
             let localizedReleaseNoteURL = basename
                 .appendingPathExtension(languageCode)
                 .appendingPathExtension("html")
-            if fileManager.fileExists(atPath: localizedReleaseNoteURL.path) {
-                localizedReleaseNotes.append((languageCode, localizedReleaseNoteURL))
+            if (try? localizedReleaseNoteURL.checkResourceIsReachable()) ?? false,
+               let localizedReleaseNoteRemoteURL = self.releaseNoteURL(for: localizedReleaseNoteURL.lastPathComponent)
+            {
+                localizedReleaseNotes.append((languageCode, localizedReleaseNoteRemoteURL))
             }
         }
         return localizedReleaseNotes
