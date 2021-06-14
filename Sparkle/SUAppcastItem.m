@@ -7,6 +7,7 @@
 //
 
 #import "SUAppcastItem.h"
+#import "SUAppcastItem+Private.h"
 #import "SUVersionComparisonProtocol.h"
 #import "SULog.h"
 #import "SUConstants.h"
@@ -49,6 +50,8 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
 @synthesize osString = _osString;
 @synthesize propertiesDictionary = _propertiesDictionary;
 @synthesize installationType = _installationType;
+@synthesize minimumAutoupdateVersion = _minimumAutoupdateVersion;
+@synthesize phasedRolloutInterval = _phasedRolloutInterval;
 
 + (BOOL)supportsSecureCoding
 {
@@ -66,20 +69,43 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
         _fileURL = [decoder decodeObjectOfClass:[NSURL class] forKey:SUAppcastItemFileURLKey];
         _infoURL = [decoder decodeObjectOfClass:[NSURL class] forKey:SUAppcastItemInfoURLKey];
         
-        _contentLength = (uint64_t)[decoder decodeInt64ForKey:SUAppcastItemContentLengthKey];
-        
-        _installationType = [decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastItemInstallationTypeKey];
-        if (!SPUValidInstallationType(_installationType)) {
+        if (_fileURL == nil && _infoURL == nil) {
             return nil;
         }
+        
+        _contentLength = (uint64_t)[decoder decodeInt64ForKey:SUAppcastItemContentLengthKey];
+        
+        NSString *installationType = [decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastItemInstallationTypeKey];
+        if (!SPUValidInstallationType(installationType)) {
+            return nil;
+        }
+        
+        _installationType = [installationType copy];
         
         _itemDescription = [(NSString *)[decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastItemDescriptionKey] copy];
         _maximumSystemVersion = [(NSString *)[decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastItemMaximumSystemVersionKey] copy];
         _minimumSystemVersion = [(NSString *)[decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastItemMinimumSystemVersionKey] copy];
+        _minimumAutoupdateVersion = [(NSString *)[decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastElementMinimumAutoupdateVersion] copy];
         _releaseNotesURL = [decoder decodeObjectOfClass:[NSURL class] forKey:SUAppcastItemReleaseNotesURLKey];
         _title = [(NSString *)[decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastItemTitleKey] copy];
-        _versionString = [(NSString *)[decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastItemVersionStringKey] copy];
-        _propertiesDictionary = [decoder decodeObjectOfClasses:[NSSet setWithArray:@[[NSDictionary class], [NSString class], [NSDate class], [NSArray class]]] forKey:SUAppcastItemPropertiesKey];
+        
+        NSString *versionString =  [(NSString *)[decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastItemVersionStringKey] copy];
+        if (versionString == nil) {
+            return nil;
+        }
+        
+        _versionString = versionString;
+        
+        _osString = [(NSString *)[decoder decodeObjectOfClass:[NSString class] forKey:SUAppcastAttributeOsType] copy];
+        
+        NSDictionary *propertiesDictionary = [decoder decodeObjectOfClasses:[NSSet setWithArray:@[[NSDictionary class], [NSString class], [NSDate class], [NSArray class]]] forKey:SUAppcastItemPropertiesKey];
+        if (propertiesDictionary == nil) {
+            return nil;
+        }
+        
+        _propertiesDictionary = propertiesDictionary;
+        
+        _phasedRolloutInterval = [decoder decodeObjectOfClass:[NSNumber class] forKey:SUAppcastElementPhasedRolloutInterval];
     }
     
     return self;
@@ -121,6 +147,10 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
         [encoder encodeObject:self.minimumSystemVersion forKey:SUAppcastItemMinimumSystemVersionKey];
     }
     
+    if (self.minimumAutoupdateVersion != nil) {
+        [encoder encodeObject:self.minimumAutoupdateVersion forKey:SUAppcastElementMinimumAutoupdateVersion];
+    }
+    
     if (self.releaseNotesURL != nil) {
         [encoder encodeObject:self.releaseNotesURL forKey:SUAppcastItemReleaseNotesURLKey];
     }
@@ -133,12 +163,20 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
         [encoder encodeObject:self.versionString forKey:SUAppcastItemVersionStringKey];
     }
     
+    if (self.osString != nil) {
+        [encoder encodeObject:self.osString forKey:SUAppcastAttributeOsType];
+    }
+    
     if (self.propertiesDictionary != nil) {
         [encoder encodeObject:self.propertiesDictionary forKey:SUAppcastItemPropertiesKey];
     }
     
     if (self.installationType != nil) {
         [encoder encodeObject:self.installationType forKey:SUAppcastItemInstallationTypeKey];
+    }
+    
+    if (self.phasedRolloutInterval != nil) {
+        [encoder encodeObject:self.phasedRolloutInterval forKey:SUAppcastElementPhasedRolloutInterval];
     }
 }
 
@@ -158,6 +196,20 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
     return self.osString == nil || [self.osString isEqualToString:SUAppcastAttributeValueMacOS];
 }
 
+- (NSDate *)date
+{
+    NSString *dateString = self.dateString;
+    if (dateString == nil) {
+        return nil;
+    }
+    
+    NSDateFormatter* dateFormatter = [[NSDateFormatter alloc] init];
+    dateFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US"];
+    dateFormatter.dateFormat = @"E, dd MMM yyyy HH:mm:ss Z";
+    
+    return [dateFormatter dateFromString:dateString];
+}
+
 - (BOOL)isInformationOnlyUpdate
 {
     return self.infoURL && !self.fileURL;
@@ -168,12 +220,7 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
     return [self initWithDictionary:dict relativeToURL:nil failureReason:nil];
 }
 
-- (instancetype)initWithDictionary:(NSDictionary *)dict failureReason:(NSString *__autoreleasing *)error
-{
-    return [self initWithDictionary:dict relativeToURL:nil failureReason:error];
-}
-
-- (instancetype)initWithDictionary:(NSDictionary *)dict relativeToURL:(NSURL *)appcastURL failureReason:(NSString *__autoreleasing *)error
+- (nullable instancetype)initWithDictionary:(NSDictionary *)dict relativeToURL:(NSURL * _Nullable)appcastURL failureReason:(NSString *__autoreleasing *)error
 {
     self = [super init];
     if (self) {
@@ -220,7 +267,11 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
             if (![theInfoURL isKindOfClass:[NSString class]]) {
                 SULog(SULogLevelError, @"%@ -%@ Info URL is not of valid type.", NSStringFromClass([self class]), NSStringFromSelector(_cmd));
             } else {
-                _infoURL = [NSURL URLWithString:theInfoURL relativeToURL:appcastURL];
+                if (appcastURL != nil) {
+                    _infoURL = [NSURL URLWithString:theInfoURL relativeToURL:appcastURL];
+                } else {
+                    _infoURL = [NSURL URLWithString:theInfoURL];
+                }
             }
         }
 
@@ -253,15 +304,26 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
         if (enclosureURLString) {
             // Sparkle used to always URL-encode, so for backwards compatibility spaces in URLs must be forgiven.
             NSString *fileURLString = [enclosureURLString stringByReplacingOccurrencesOfString:@" " withString:@"%20"];
-            _fileURL = [NSURL URLWithString:fileURLString relativeToURL:appcastURL];
+            if (appcastURL != nil) {
+                _fileURL = [NSURL URLWithString:fileURLString relativeToURL:appcastURL];
+            } else {
+                _fileURL = [NSURL URLWithString:fileURLString];
+            }
         }
         if (enclosure) {
             _signatures = [[SUSignatures alloc] initWithDsa:[enclosure objectForKey:SUAppcastAttributeDSASignature] ed:[enclosure objectForKey:SUAppcastAttributeEDSignature]];
+            _osString = [enclosure objectForKey:SUAppcastAttributeOsType];
         }
 
         _versionString = [(NSString *)newVersion copy];
         _minimumSystemVersion = [(NSString *)[dict objectForKey:SUAppcastElementMinimumSystemVersion] copy];
         _maximumSystemVersion = [(NSString *)[dict objectForKey:SUAppcastElementMaximumSystemVersion] copy];
+        _minimumAutoupdateVersion = [(NSString *)[dict objectForKey:SUAppcastElementMinimumAutoupdateVersion] copy];
+        
+        NSString* rolloutIntervalString = [(NSString *)[dict objectForKey:SUAppcastElementPhasedRolloutInterval] copy];
+        if (rolloutIntervalString != nil) {
+            _phasedRolloutInterval = @(rolloutIntervalString.integerValue);
+        }
 
         NSString *shortVersionString = [enclosure objectForKey:SUAppcastAttributeShortVersionString];
         if (nil == shortVersionString) {
@@ -274,29 +336,48 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
             _displayVersionString = [_versionString copy];
         }
         
-        _installationType = [enclosure objectForKey:SUAppcastAttributeInstallationType];
-        if (_installationType == nil) {
-            _installationType = SPUInstallationTypeDefault;
-        } else if (!SPUValidInstallationType(_installationType)) {
+        NSString *attributeInstallationType = [enclosure objectForKey:SUAppcastAttributeInstallationType];
+        NSString *chosenInstallationType;
+        if (attributeInstallationType == nil) {
+            // If we have a flat package, assume installation type is guided
+            // (flat / non-archived interactive packages are not supported)
+            // Otherwise assume we have a normal application inside an archive
+            if ([_fileURL.pathExtension isEqualToString:@"pkg"] || [_fileURL.pathExtension isEqualToString:@"mpkg"]) {
+                chosenInstallationType = SPUInstallationTypeGuidedPackage;
+            } else {
+                chosenInstallationType = SPUInstallationTypeApplication;
+            }
+        } else if (!SPUValidInstallationType(attributeInstallationType)) {
             if (error != NULL) {
-                *error = [NSString stringWithFormat:@"Feed item's enclosure lacks valid %@ (found %@)", SUAppcastAttributeInstallationType, _installationType];
+                *error = [NSString stringWithFormat:@"Feed item's enclosure lacks valid %@ (found %@)", SUAppcastAttributeInstallationType, attributeInstallationType];
             }
             return nil;
-        } else if ([_installationType isEqualToString:SPUInstallationTypeInteractivePackage]) {
+        } else if ([attributeInstallationType isEqualToString:SPUInstallationTypeInteractivePackage]) {
             SULog(SULogLevelDefault, @"warning: '%@' for %@ is deprecated. Use '%@' instead.", SPUInstallationTypeInteractivePackage, SUAppcastAttributeInstallationType, SPUInstallationTypeGuidedPackage);
+            
+            chosenInstallationType = attributeInstallationType;
+        } else {
+            chosenInstallationType = attributeInstallationType;
         }
+        
+        _installationType = [chosenInstallationType copy];
 
         // Find the appropriate release notes URL.
         NSString *releaseNotesString = [dict objectForKey:SUAppcastElementReleaseNotesLink];
         if (releaseNotesString) {
-            NSURL *url = [NSURL URLWithString:releaseNotesString relativeToURL:appcastURL];
+            NSURL *url;
+            if (appcastURL != nil) {
+                url = [NSURL URLWithString:releaseNotesString relativeToURL:appcastURL];
+            } else {
+                url = [NSURL URLWithString:releaseNotesString];
+            }
             if ([url isFileURL]) {
                 SULog(SULogLevelError, @"Release notes with file:// URLs are not supported");
             } else {
                 _releaseNotesURL = url;
             }
         } else if ([self.itemDescription hasPrefix:@"http://"] || [self.itemDescription hasPrefix:@"https://"]) { // if the description starts with http:// or https:// use that.
-            _releaseNotesURL = [NSURL URLWithString:self.itemDescription];
+            _releaseNotesURL = [NSURL URLWithString:(NSString * _Nonnull)self.itemDescription];
         } else {
             _releaseNotesURL = nil;
         }
@@ -313,7 +394,9 @@ static NSString *SUAppcastItemInstallationTypeKey = @"SUAppcastItemInstallationT
                 [fakeAppCastDict setObject:deltaDictionary forKey:SURSSElementEnclosure];
                 SUAppcastItem *deltaItem = [[SUAppcastItem alloc] initWithDictionary:fakeAppCastDict];
 
-                [deltas setObject:deltaItem forKey:deltaFrom];
+                if (deltaItem != nil) {
+                    [deltas setObject:deltaItem forKey:deltaFrom];
+                }
             }
             _deltaUpdates = deltas;
         }

@@ -19,6 +19,7 @@
 extern const NSTimeInterval SUDefaultUpdatePermissionPromptInterval;
 extern const NSTimeInterval SUMinimumUpdateCheckInterval;
 extern const NSTimeInterval SUDefaultUpdateCheckInterval;
+extern const uint64_t SULeewayUpdateCheckInterval;
 extern const NSTimeInterval SUImpatientUpdateCheckInterval;
 
 extern NSString *const SUBundleIdentifier;
@@ -37,9 +38,10 @@ extern NSString *const SUTechnicalErrorInformationKey;
 
 extern NSString *const SUFeedURLKey;
 extern NSString *const SUHasLaunchedBeforeKey;
-extern NSString *const SUUpdateRelaunchingMarkerKey;
+extern NSString *const SURelaunchHostBundleKey;
 extern NSString *const SUShowReleaseNotesKey;
-extern NSString *const SUSkippedVersionKey;
+extern NSString *const SUSkippedMinorVersionKey;
+extern NSString *const SUSkippedMajorVersionKey;
 extern NSString *const SUScheduledCheckIntervalKey;
 extern NSString *const SULastCheckTimeKey;
 extern NSString *const SUExpectsDSASignatureKey;
@@ -52,6 +54,7 @@ extern NSString *const SUAllowsAutomaticUpdatesKey;
 extern NSString *const SUEnableAutomaticChecksKey;
 extern NSString *const SUEnableSystemProfilingKey;
 extern NSString *const SUSendProfileInfoKey;
+extern NSString *const SUUpdateGroupIdentifierKey;
 extern NSString *const SULastProfileSubmitDateKey;
 extern NSString *const SUPromptUserOnFirstLaunchKey;
 extern NSString *const SUDefaultsDomainKey;
@@ -76,10 +79,12 @@ extern NSString *const SUAppcastAttributeInstallationType;
 
 extern NSString *const SUAppcastElementCriticalUpdate;
 extern NSString *const SUAppcastElementDeltas;
+extern NSString *const SUAppcastElementMinimumAutoupdateVersion;
 extern NSString *const SUAppcastElementMinimumSystemVersion;
 extern NSString *const SUAppcastElementMaximumSystemVersion;
 extern NSString *const SUAppcastElementReleaseNotesLink;
 extern NSString *const SUAppcastElementTags;
+extern NSString *const SUAppcastElementPhasedRolloutInterval;
 
 extern NSString *const SURSSAttributeURL;
 extern NSString *const SURSSAttributeLength;
