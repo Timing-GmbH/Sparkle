@@ -6,7 +6,7 @@
 //  Copyright 2010 Dragon Systems Software Limited. All rights reserved.
 //
 
-/*!
+/**
 # Sparkle Guided Installations
 
 A guided installation allows Sparkle to download and install a package (pkg) or multi-package (mpkg) without user interaction.
@@ -21,6 +21,6 @@ A guided installation can be started by applications other than the application 
 
 @interface SUGuidedPackageInstaller : NSObject <SUInstallerProtocol>
 
-- (instancetype)initWithPackagePath:(NSString *)packagePath;
+- (instancetype)initWithPackagePath:(NSString *)packagePath homeDirectory:(NSString *)homeDirectory userName:(NSString *)userName;
 
 @end

@@ -94,7 +94,6 @@ static NSMutableDictionary *sharedUpdaters = nil;
 // This will be used when the updater is instantiated in a nib such as MainMenu
 - (instancetype)init
 {
-    SULog(SULogLevelDefault, @"DEPRECATION: SUUpdater is deprecated in Sparkle 2 but functional for transitional purposes. Please migrate to SPUStandardUpdaterController as a nib instantiated replacement, or SPUUpdater.");
     return [self initForBundle:[NSBundle mainBundle]];
 }
 
@@ -110,7 +109,8 @@ static NSMutableDictionary *sharedUpdaters = nil;
 
 - (NSBundle *)sparkleBundle
 {
-    return self.updater.sparkleBundle;
+    // Use explicit class to use the correct bundle even when subclassed
+    return [NSBundle bundleForClass:[SUUpdater class]];
 }
 
 - (BOOL)automaticallyChecksForUpdates
@@ -256,7 +256,7 @@ static NSMutableDictionary *sharedUpdaters = nil;
     return versionDisplayer;
 }
 
-- (BOOL)updaterMayCheckForUpdates:(SPUUpdater *)__unused updater
+- (BOOL)updater:(SPUUpdater *)__unused updater mayPerformUpdateCheck:(SPUUpdateCheck)__unused updateCheck error:(NSError *__autoreleasing  _Nullable *)error
 {
     BOOL updaterMayCheck = YES;
     if ([self.delegate respondsToSelector:@selector(updaterMayCheckForUpdates:)]) {

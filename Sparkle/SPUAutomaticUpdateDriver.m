@@ -39,7 +39,7 @@
 @synthesize updateItem = _updateItem;
 @synthesize willInstallSilently = _willInstallSilently;
 
-- (instancetype)initWithHost:(SUHost *)host applicationBundle:(NSBundle *)applicationBundle sparkleBundle:(NSBundle *)sparkleBundle updater:(id)updater userDriver:(id <SPUUserDriver>)userDriver updaterDelegate:(nullable id <SPUUpdaterDelegate>)updaterDelegate
+- (instancetype)initWithHost:(SUHost *)host applicationBundle:(NSBundle *)applicationBundle updater:(id)updater userDriver:(id <SPUUserDriver>)userDriver updaterDelegate:(nullable id <SPUUpdaterDelegate>)updaterDelegate
 {
     self = [super init];
     if (self != nil) {
@@ -47,42 +47,43 @@
         // The user driver is only used for a termination callback
         _userDriver = userDriver;
         _updaterDelegate = updaterDelegate;
-        _coreDriver = [[SPUCoreBasedUpdateDriver alloc] initWithHost:host applicationBundle:applicationBundle sparkleBundle:sparkleBundle updater:updater updaterDelegate:updaterDelegate delegate:self];
+        _coreDriver = [[SPUCoreBasedUpdateDriver alloc] initWithHost:host applicationBundle:applicationBundle updateCheck:SPUUpdateCheckUpdatesInBackground updater:updater updaterDelegate:updaterDelegate delegate:self];
     }
     return self;
 }
 
-- (void)checkForUpdatesAtAppcastURL:(NSURL *)appcastURL withUserAgent:(NSString *)userAgent httpHeaders:(NSDictionary * _Nullable)httpHeaders preventingInstallerInteraction:(BOOL)preventsInstallerInteraction completion:(SPUUpdateDriverCompletion)completionBlock
+- (void)setCompletionHandler:(SPUUpdateDriverCompletion)completionBlock
 {
-    [self.coreDriver prepareCheckForUpdatesWithCompletion:completionBlock];
-    
-    [self.coreDriver preflightForUpdatePermissionPreventingInstallerInteraction:preventsInstallerInteraction reply:^(NSError * _Nullable error) {
-        if (error != nil) {
-            [self abortUpdateWithError:error];
-        } else {
-            [self.coreDriver checkForUpdatesAtAppcastURL:appcastURL withUserAgent:userAgent httpHeaders:httpHeaders inBackground:YES requiresSilentInstall:YES];
-        }
-    }];
+    [self.coreDriver setCompletionHandler:completionBlock];
 }
 
-- (void)resumeInstallingUpdateWithCompletion:(SPUUpdateDriverCompletion)__unused completionBlock
+- (void)setUpdateShownHandler:(void (^)(void))updateShownHandler
 {
-    // Nothing really to do here.. this shouldn't be called.
-    SULog(SULogLevelError, @"Error: resumeInstallingUpdateWithCompletion: called on SPUAutomaticUpdateDriver");
 }
 
-- (void)resumeUpdate:(id<SPUResumableUpdate>)__unused resumableUpdate completion:(SPUUpdateDriverCompletion)__unused completionBlock
+- (void)checkForUpdatesAtAppcastURL:(NSURL *)appcastURL withUserAgent:(NSString *)userAgent httpHeaders:(NSDictionary * _Nullable)httpHeaders
+{
+    [self.coreDriver checkForUpdatesAtAppcastURL:appcastURL withUserAgent:userAgent httpHeaders:httpHeaders inBackground:YES requiresSilentInstall:YES];
+}
+
+- (void)resumeInstallingUpdate
 {
     // Nothing really to do here.. this shouldn't be called.
-    SULog(SULogLevelError, @"Error: resumeDownloadedUpdate:completion: called on SPUAutomaticUpdateDriver");
+    SULog(SULogLevelError, @"Error: resumeInstallingUpdate: called on SPUAutomaticUpdateDriver");
 }
 
-- (void)basicDriverDidFindUpdateWithAppcastItem:(SUAppcastItem *)updateItem secondaryAppcastItem:(SUAppcastItem *)secondaryUpdateItem preventsAutoupdate:(BOOL)preventsAutoupdate
+- (void)resumeUpdate:(id<SPUResumableUpdate>)__unused resumableUpdate
+{
+    // Nothing really to do here.. this shouldn't be called.
+    SULog(SULogLevelError, @"Error: resumeDownloadedUpdate: called on SPUAutomaticUpdateDriver");
+}
+
+- (void)basicDriverDidFindUpdateWithAppcastItem:(SUAppcastItem *)updateItem secondaryAppcastItem:(SUAppcastItem * _Nullable)secondaryUpdateItem
 {
     self.updateItem = updateItem;
     
-    if (updateItem.isInformationOnlyUpdate || preventsAutoupdate) {
-        [self.coreDriver deferInformationalUpdate:updateItem secondaryUpdate:secondaryUpdateItem preventsAutoupdate:preventsAutoupdate];
+    if (updateItem.isInformationOnlyUpdate || updateItem.majorUpgrade) {
+        [self.coreDriver deferInformationalUpdate:updateItem secondaryUpdate:secondaryUpdateItem];
         [self abortUpdate];
     } else {
         [self.coreDriver downloadUpdateFromAppcastItem:updateItem secondaryAppcastItem:secondaryUpdateItem inBackground:YES];
@@ -133,7 +134,8 @@
 
 - (void)abortUpdateWithError:(NSError *)error
 {
-    BOOL showNextUpdateImmediately = (error == nil || error.code == SUInstallationAuthorizeLaterError) && (!self.willInstallSilently || self.updateItem.isCriticalUpdate || self.updateItem.isInformationOnlyUpdate);
+    BOOL showNextUpdateImmediately = (error == nil || error.code == SUInstallationAuthorizeLaterError) && (!self.willInstallSilently || self.updateItem.criticalUpdate || self.updateItem.isInformationOnlyUpdate);
+    
     [self.coreDriver abortUpdateAndShowNextUpdateImmediately:showNextUpdateImmediately error:error];
 }
 

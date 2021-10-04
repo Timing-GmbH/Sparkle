@@ -68,7 +68,10 @@ static WKUserScript *_userScriptWithInjectedStyleSource(NSString *styleSource)
         // that involves implementing a delegate method that is only available on macOS 11.. to get it properly working.
         // To simplify things, just rely on deprecated property for now.
         // Future reader: if you change how JS is disabled, please be sure to test that JS code is properly disabled in HTML release notes.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         configuration.preferences.javaScriptEnabled = javaScriptEnabled;
+#pragma clang diagnostic pop
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = NO;
         
         NSError *colorStyleContentsError = nil;
@@ -76,7 +79,7 @@ static WKUserScript *_userScriptWithInjectedStyleSource(NSString *styleSource)
         
         WKUserContentController *userContentController = [[WKUserContentController alloc] init];
         
-        NSString *fontStyleContents = [NSString stringWithFormat:@"body { font-family: %@; font-size: %dpt; }", fontFamily, fontPointSize];
+        NSString *fontStyleContents = [NSString stringWithFormat:@"body { font-family: %@; font-size: %dpx; }", fontFamily, fontPointSize];
         
         NSString *finalStyleContents;
         if (colorStyleContents == nil) {

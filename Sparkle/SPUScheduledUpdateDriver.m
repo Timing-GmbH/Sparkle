@@ -19,6 +19,7 @@
 
 @property (nonatomic, readonly) SPUUIBasedUpdateDriver *uiDriver;
 @property (nonatomic) BOOL showedUpdate;
+@property (nonatomic) void (^updateDidShowHandler)(void);
 
 @end
 
@@ -26,43 +27,49 @@
 
 @synthesize uiDriver = _uiDriver;
 @synthesize showedUpdate = _showedUpdate;
+@synthesize updateDidShowHandler = _updateDidShowHandler;
 
-- (instancetype)initWithHost:(SUHost *)host applicationBundle:(NSBundle *)applicationBundle sparkleBundle:(NSBundle *)sparkleBundle updater:(id)updater userDriver:(id <SPUUserDriver>)userDriver updaterDelegate:(nullable id <SPUUpdaterDelegate>)updaterDelegate
+- (instancetype)initWithHost:(SUHost *)host applicationBundle:(NSBundle *)applicationBundle updater:(id)updater userDriver:(id <SPUUserDriver>)userDriver updaterDelegate:(nullable id <SPUUpdaterDelegate>)updaterDelegate
 {
     self = [super init];
     if (self != nil) {
-        _uiDriver = [[SPUUIBasedUpdateDriver alloc] initWithHost:host applicationBundle:applicationBundle sparkleBundle:sparkleBundle updater:updater userDriver:userDriver userInitiated:NO updaterDelegate:updaterDelegate delegate:self];
+        _uiDriver = [[SPUUIBasedUpdateDriver alloc] initWithHost:host applicationBundle:applicationBundle updater:updater userDriver:userDriver userInitiated:NO updaterDelegate:updaterDelegate delegate:self];
     }
     return self;
 }
 
-- (void)checkForUpdatesAtAppcastURL:(NSURL *)appcastURL withUserAgent:(NSString *)userAgent httpHeaders:(NSDictionary * _Nullable)httpHeaders preventingInstallerInteraction:(BOOL)preventsInstallerInteraction completion:(SPUUpdateDriverCompletion)completionBlock
+- (void)setCompletionHandler:(SPUUpdateDriverCompletion)completionBlock
 {
-    [self.uiDriver prepareCheckForUpdatesWithCompletion:completionBlock];
-    
-    [self.uiDriver preflightForUpdatePermissionPreventingInstallerInteraction:preventsInstallerInteraction reply:^(NSError * _Nullable error) {
-        if (error != nil) {
-            // Don't tell the user about the permission error for scheduled update checks
-            [self abortUpdateWithError:nil];
-        } else {
-            [self.uiDriver checkForUpdatesAtAppcastURL:appcastURL withUserAgent:userAgent httpHeaders:httpHeaders inBackground:YES];
-        }
-    }];
+    [self.uiDriver setCompletionHandler:completionBlock];
 }
 
-- (void)resumeInstallingUpdateWithCompletion:(SPUUpdateDriverCompletion)completionBlock
+- (void)setUpdateShownHandler:(void (^)(void))handler
 {
-    [self.uiDriver resumeInstallingUpdateWithCompletion:completionBlock];
+    self.updateDidShowHandler = handler;
 }
 
-- (void)resumeUpdate:(id<SPUResumableUpdate>)resumableUpdate completion:(SPUUpdateDriverCompletion)completionBlock
+- (void)checkForUpdatesAtAppcastURL:(NSURL *)appcastURL withUserAgent:(NSString *)userAgent httpHeaders:(NSDictionary * _Nullable)httpHeaders
 {
-    [self.uiDriver resumeUpdate:resumableUpdate completion:completionBlock];
+    [self.uiDriver checkForUpdatesAtAppcastURL:appcastURL withUserAgent:userAgent httpHeaders:httpHeaders inBackground:YES];
+}
+
+- (void)resumeInstallingUpdate
+{
+    [self.uiDriver resumeInstallingUpdate];
+}
+
+- (void)resumeUpdate:(id<SPUResumableUpdate>)resumableUpdate
+{
+    [self.uiDriver resumeUpdate:resumableUpdate];
 }
 
 - (void)uiDriverDidShowUpdate
 {
     self.showedUpdate = YES;
+    
+    if (self.updateDidShowHandler != nil) {
+        self.updateDidShowHandler();
+    }
 }
 
 - (BOOL)showingUpdate
@@ -72,14 +79,12 @@
 
 - (void)basicDriverIsRequestingAbortUpdateWithError:(nullable NSError *) error
 {
-    // Don't tell the user that no update was found or some appcast fetch error occurred for scheduled update checks if we haven't shown the update
-    [self abortUpdateWithError:self.showedUpdate ? error : nil];
+    [self abortUpdateWithError:error];
 }
 
 - (void)coreDriverIsRequestingAbortUpdateWithError:(nullable NSError *) error
 {
-    // Don't tell the user that an update error occurred for scheduled update checks if we haven't shown the update
-    [self abortUpdateWithError:self.showedUpdate ? error : nil];
+    [self abortUpdateWithError:error];
 }
 
 - (void)uiDriverIsRequestingAbortUpdateWithError:(nullable NSError *)error
@@ -94,7 +99,7 @@
 
 - (void)abortUpdateWithError:(nullable NSError *)error
 {
-    [self.uiDriver abortUpdateWithError:error];
+    [self.uiDriver abortUpdateWithError:error showErrorToUser:self.showedUpdate];
 }
 
 @end

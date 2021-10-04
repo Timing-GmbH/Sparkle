@@ -10,14 +10,14 @@
 #import "SUAppcastDriver.h"
 #import "SPUUpdaterDelegate.h"
 #import "SUErrors.h"
-#import "SULog.h"
-#import "SULog+NSError.h"
 #import "SULocalizations.h"
 #import "SUHost.h"
 #import "SUAppcastItem.h"
 #import "SPUProbeInstallStatus.h"
 #import "SPUInstallationInfo.h"
 #import "SPUResumableUpdate.h"
+#import "SPUAppcastItemState.h"
+#import "SUAppcastItem+Private.h"
 
 
 #include "AppKitPrevention.h"
@@ -29,6 +29,7 @@
 @property (nonatomic, copy) SPUUpdateDriverCompletion completionBlock;
 
 @property (nonatomic, readonly) SUHost *host;
+@property (nonatomic, readonly) SPUUpdateCheck updateCheck;
 @property (nonatomic, readonly, weak) id updater; // if we didn't have legacy support, I'd remove this..
 @property (nullable, nonatomic, readonly, weak) id <SPUUpdaterDelegate>updaterDelegate;
 
@@ -39,6 +40,7 @@
 @implementation SPUBasicUpdateDriver
 
 @synthesize host = _host;
+@synthesize updateCheck = _updateCheck;
 @synthesize updater = _updater;
 @synthesize updaterDelegate = _updaterDelegate;
 @synthesize delegate = _delegate;
@@ -46,11 +48,12 @@
 @synthesize completionBlock = _completionBlock;
 @synthesize aborted = _aborted;
 
-- (instancetype)initWithHost:(SUHost *)host updater:(id)updater updaterDelegate:(id <SPUUpdaterDelegate>)updaterDelegate delegate:(id <SPUBasicUpdateDriverDelegate>)delegate
+- (instancetype)initWithHost:(SUHost *)host updateCheck:(SPUUpdateCheck)updateCheck updater:(id)updater updaterDelegate:(id <SPUUpdaterDelegate>)updaterDelegate delegate:(id <SPUBasicUpdateDriverDelegate>)delegate
 {
     self = [super init];
     if (self != nil) {
         _host = host;
+        _updateCheck = updateCheck;
         _updater = updater;
         _updaterDelegate = updaterDelegate;
         _delegate = delegate;
@@ -60,7 +63,7 @@
     return self;
 }
 
-- (void)prepareCheckForUpdatesWithCompletion:(SPUUpdateDriverCompletion)completionBlock
+- (void)setCompletionHandler:(SPUUpdateDriverCompletion)completionBlock
 {
     self.completionBlock = completionBlock;
 }
@@ -79,7 +82,7 @@
     }
 }
 
-- (void)notifyResumableUpdateItem:(SUAppcastItem *)updateItem secondaryUpdateItem:(SUAppcastItem *)secondaryUpdateItem systemDomain:(NSNumber * _Nullable)systemDomain
+- (void)notifyResumableUpdateItem:(SUAppcastItem *)updateItem secondaryUpdateItem:(SUAppcastItem * _Nullable)secondaryUpdateItem systemDomain:(NSNumber * _Nullable)systemDomain
 {
     if (updateItem == nil) {
         [self.delegate basicDriverIsRequestingAbortUpdateWithError:[NSError errorWithDomain:SUSparkleErrorDomain code:SUResumeAppcastError userInfo:@{ NSLocalizedDescriptionKey: SULocalizedString(@"Failed to resume installing update.", nil) }]];
@@ -88,14 +91,12 @@
         [self notifyFinishLoadingAppcast];
         
         SUAppcastItem *nonNullUpdateItem = updateItem;
-        [self notifyFoundValidUpdateWithAppcastItem:nonNullUpdateItem secondaryAppcastItem:secondaryUpdateItem preventsAutoupdate:NO systemDomain:systemDomain];
+        [self notifyFoundValidUpdateWithAppcastItem:nonNullUpdateItem secondaryAppcastItem:secondaryUpdateItem systemDomain:systemDomain resuming:YES];
     }
 }
 
-- (void)resumeInstallingUpdateWithCompletion:(SPUUpdateDriverCompletion)completionBlock
+- (void)resumeInstallingUpdate
 {
-    self.completionBlock = completionBlock;
-    
     NSString *hostBundleIdentifier = self.host.bundle.bundleIdentifier;
     assert(hostBundleIdentifier != nil);
     [SPUProbeInstallStatus probeInstallerUpdateItemForHostBundleIdentifier:hostBundleIdentifier completion:^(SPUInstallationInfo * _Nullable installationInfo) {
@@ -105,10 +106,8 @@
     }];
 }
 
-- (void)resumeUpdate:(id<SPUResumableUpdate>)resumableUpdate completion:(SPUUpdateDriverCompletion)completionBlock
+- (void)resumeUpdate:(id<SPUResumableUpdate>)resumableUpdate
 {
-    self.completionBlock = completionBlock;
-    
     [self notifyResumableUpdateItem:resumableUpdate.updateItem secondaryUpdateItem:resumableUpdate.secondaryUpdateItem systemDomain:nil];
 }
 
@@ -137,38 +136,39 @@
     }
 }
 
-- (void)notifyFoundValidUpdateWithAppcastItem:(SUAppcastItem *)updateItem secondaryAppcastItem:(SUAppcastItem *)secondaryUpdateItem preventsAutoupdate:(BOOL)preventsAutoupdate systemDomain:(NSNumber * _Nullable)systemDomain
+- (void)notifyFoundValidUpdateWithAppcastItem:(SUAppcastItem *)updateItem secondaryAppcastItem:(SUAppcastItem * _Nullable)secondaryUpdateItem systemDomain:(NSNumber * _Nullable)systemDomain resuming:(BOOL)resuming
 {
     if (!self.aborted) {
-        [[NSNotificationCenter defaultCenter] postNotificationName:SUUpdaterDidFindValidUpdateNotification
-                                                            object:self.updater
-                                                          userInfo:@{ SUUpdaterAppcastItemNotificationKey: updateItem }];
-        
-        if ([self.updaterDelegate respondsToSelector:@selector((updater:didFindValidUpdate:))]) {
-            [self.updaterDelegate updater:self.updater didFindValidUpdate:updateItem];
+        // If the update is not being resumed from a prior session, give the delegate a chance to bail
+        NSError *shouldNotProceedError = nil;
+        if (!resuming && [self.updaterDelegate respondsToSelector:@selector(updater:shouldProceedWithUpdate:updateCheck:error:)] && ![self.updaterDelegate updater:self.updater shouldProceedWithUpdate:updateItem updateCheck:self.updateCheck error:&shouldNotProceedError]) {
+            [self.delegate basicDriverIsRequestingAbortUpdateWithError:shouldNotProceedError];
+        } else {
+            [[NSNotificationCenter defaultCenter] postNotificationName:SUUpdaterDidFindValidUpdateNotification
+                                                                object:self.updater
+                                                              userInfo:@{ SUUpdaterAppcastItemNotificationKey: updateItem }];
+            
+            if ([self.updaterDelegate respondsToSelector:@selector((updater:didFindValidUpdate:))]) {
+                [self.updaterDelegate updater:self.updater didFindValidUpdate:updateItem];
+            }
+            
+            [self.delegate basicDriverDidFindUpdateWithAppcastItem:updateItem secondaryAppcastItem:secondaryUpdateItem systemDomain:systemDomain];
         }
-        
-        [self.delegate basicDriverDidFindUpdateWithAppcastItem:updateItem secondaryAppcastItem:secondaryUpdateItem preventsAutoupdate:preventsAutoupdate systemDomain:systemDomain];
     }
 }
 
-- (void)didFindValidUpdateWithAppcastItem:(SUAppcastItem *)updateItem secondaryAppcastItem:(SUAppcastItem *)secondaryAppcastItem preventsAutoupdate:(BOOL)preventsAutoupdate
+- (void)didFindValidUpdateWithAppcastItem:(SUAppcastItem *)updateItem secondaryAppcastItem:(SUAppcastItem * _Nullable)secondaryAppcastItem
 {
-    [self notifyFoundValidUpdateWithAppcastItem:updateItem secondaryAppcastItem:secondaryAppcastItem preventsAutoupdate:preventsAutoupdate systemDomain:nil];
+    [self notifyFoundValidUpdateWithAppcastItem:updateItem secondaryAppcastItem:secondaryAppcastItem systemDomain:nil resuming:NO];
 }
 
-- (void)didNotFindUpdateWithLatestAppcastItem:(nullable SUAppcastItem *)latestAppcastItem hostToLatestAppcastItemComparisonResult:(NSComparisonResult)hostToLatestAppcastItemComparisonResult passesMinOSVersion:(BOOL)passesMinOSVersion passesMaxOSVersion:(BOOL)passesMaxOSVersion
+- (void)didNotFindUpdateWithLatestAppcastItem:(nullable SUAppcastItem *)latestAppcastItem hostToLatestAppcastItemComparisonResult:(NSComparisonResult)hostToLatestAppcastItemComparisonResult background:(BOOL)background
 {
     if (!self.aborted) {
-        if ([self.updaterDelegate respondsToSelector:@selector((updaterDidNotFindUpdate:))]) {
-            [self.updaterDelegate updaterDidNotFindUpdate:self.updater];
-        }
-        [[NSNotificationCenter defaultCenter] postNotificationName:SUUpdaterDidNotFindUpdateNotification object:self.updater];
-        
         NSString *localizedDescription;
         NSString *recoverySuggestion;
-        NSString *recoveryOption;
         
+        SPUNoUpdateFoundReason reason;
         if (latestAppcastItem != nil) {
             switch (hostToLatestAppcastItemComparisonResult) {
                 case NSOrderedDescending:
@@ -176,52 +176,82 @@
                     localizedDescription = SULocalizedString(@"You're up-to-date!", "Status message shown when the user checks for updates but is already current or the feed doesn't contain any updates.");
                     
                     recoverySuggestion = [NSString stringWithFormat:SULocalizedString(@"%@ %@ is currently the newest version available.\n(You are currently running version %@.)", nil), [self.host name], latestAppcastItem.displayVersionString, [self.host displayVersion]];
+                    
+                    reason = SPUNoUpdateFoundReasonOnNewerThanLatestVersion;
                     break;
                 case NSOrderedSame:
                     // No new update is available and we're on the latest
                     localizedDescription = SULocalizedString(@"You're up-to-date!", "Status message shown when the user checks for updates but is already current or the feed doesn't contain any updates.");
                     
                     recoverySuggestion = [NSString stringWithFormat:SULocalizedString(@"%@ %@ is currently the newest version available.", nil), [self.host name], [self.host displayVersion]];
+                    
+                    reason = SPUNoUpdateFoundReasonOnLatestVersion;
                     break;
                 case NSOrderedAscending:
-                    // This means a new update doesn't match the OS requirements
-                    if (!passesMinOSVersion) {
+                    // A new update is available but cannot be installed
+                    
+                    if (!latestAppcastItem.minimumOperatingSystemVersionIsOK) {
                         localizedDescription = SULocalizedString(@"Your macOS version is too old", nil);
                         
                         recoverySuggestion = [NSString stringWithFormat:SULocalizedString(@"%1$@ %2$@ is available but your macOS version is too old to install it. At least macOS %3$@ is required.", nil), [self.host name], latestAppcastItem.versionString, latestAppcastItem.minimumSystemVersion];
-                    } else if (!passesMaxOSVersion) {
+                        
+                        reason = SPUNoUpdateFoundReasonSystemIsTooOld;
+                    } else if (!latestAppcastItem.maximumOperatingSystemVersionIsOK) {
                         localizedDescription = SULocalizedString(@"Your macOS version is too new", nil);
                         
                         recoverySuggestion = [NSString stringWithFormat:SULocalizedString(@"%1$@ %2$@ is available but your macOS version is too new for this update. This update only supports up to macOS %3$@.", nil), [self.host name], latestAppcastItem.versionString, latestAppcastItem.maximumSystemVersion];
+                        
+                        reason = SPUNoUpdateFoundReasonSystemIsTooNew;
                     } else {
                         // We shouldn't realistically get here
                         localizedDescription = SULocalizedString(@"You're up-to-date!", "Status message shown when the user checks for updates but is already current or the feed doesn't contain any updates.");
                         
                         recoverySuggestion = [NSString stringWithFormat:SULocalizedString(@"%@ %@ is currently the newest version available.", nil), [self.host name], [self.host displayVersion]];
+                        
+                        reason = SPUNoUpdateFoundReasonUnknown;
                     }
                     break;
             }
-            
-            recoveryOption = @"OK";
         } else {
-            // When no updates are found in the appcast, or latest appcast item info
-            // was not provided (i.e, for a background update check)
-            // In the case no info was provided for a background check, the error isn't shown anywhere
-            localizedDescription = SULocalizedString(@"Update Error!", nil);
-            recoverySuggestion = SULocalizedString(@"No valid update information could be loaded.", nil);
-            recoveryOption = SULocalizedString(@"Cancel Update", nil);
+            // When no updates are found in the appcast
+            // We will need to assume the user is up to date if the feed doen't have any applicable update items
+            // There could be update items on channels the updater is not subscribed to for example. But we can't tell the user about them.
+            // There could also only be update items available for other platforms or none at all.
+            localizedDescription = SULocalizedString(@"You're up-to-date!", "Status message shown when the user checks for updates but is already current or the feed doesn't contain any updates.");
+            recoverySuggestion = [NSString stringWithFormat:SULocalizedString(@"%@ %@ is currently the newest version available.", nil), [self.host name], [self.host displayVersion]];
+            
+            reason = SPUNoUpdateFoundReasonOnLatestVersion;
+        }
+        
+        NSString *recoveryOption = SULocalizedString(@"OK", nil);
+        
+        NSMutableDictionary *userInfo =
+        [NSMutableDictionary dictionaryWithDictionary:@{
+            NSLocalizedDescriptionKey: localizedDescription,
+            NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
+            NSLocalizedRecoveryOptionsErrorKey: @[recoveryOption],
+            SPUNoUpdateFoundReasonKey: @(reason),
+            SPUNoUpdateFoundUserInitiatedKey: @(!background),
+        }];
+        
+        if (latestAppcastItem != nil) {
+            userInfo[SPULatestAppcastItemFoundKey] = latestAppcastItem;
         }
         
         NSError *notFoundError =
         [NSError
          errorWithDomain:SUSparkleErrorDomain
          code:SUNoUpdateError
-         userInfo:@{
-                    NSLocalizedDescriptionKey: localizedDescription,
-                    NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
-                    NSLocalizedRecoveryOptionsErrorKey: @[recoveryOption]
-                    }
-         ];
+         userInfo:[userInfo copy]];
+        
+        if ([self.updaterDelegate respondsToSelector:@selector((updaterDidNotFindUpdate:error:))]) {
+            [self.updaterDelegate updaterDidNotFindUpdate:self.updater error:notFoundError];
+        } else if ([self.updaterDelegate respondsToSelector:@selector((updaterDidNotFindUpdate:))]) {
+            [self.updaterDelegate updaterDidNotFindUpdate:self.updater];
+        }
+        
+        [[NSNotificationCenter defaultCenter] postNotificationName:SUUpdaterDidNotFindUpdateNotification object:self.updater userInfo:userInfo];
+        
         [self.delegate basicDriverIsRequestingAbortUpdateWithError:notFoundError];
     }
 }
@@ -231,19 +261,8 @@
     self.aborted = YES;
     
     [self.appcastDriver cleanup:^{
-        if (error != nil) {
-            if (error.code != SUNoUpdateError && error.code != SUInstallationCanceledError && error.code != SUInstallationAuthorizeLaterError) { // Let's not bother logging this.
-                SULogError(error);
-            }
-            
-            // Notify host app that updater has aborted
-            if ([self.updaterDelegate respondsToSelector:@selector((updater:didAbortWithError:))]) {
-                [self.updaterDelegate updater:self.updater didAbortWithError:(NSError * _Nonnull)error];
-            }
-        }
-        
         if (self.completionBlock != nil) {
-            self.completionBlock(shouldShowUpdateImmediately, resumableUpdate);
+            self.completionBlock(shouldShowUpdateImmediately, resumableUpdate, error);
             self.completionBlock = nil;
         }
     }];
