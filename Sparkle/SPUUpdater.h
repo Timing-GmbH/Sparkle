@@ -141,6 +141,7 @@ SU_EXPORT @interface SPUUpdater : NSObject
  A property indicating whether or not updates can be checked by the user.
  
  An update check can be made by the user when an update session isn't in progress, or when an update or its progress is being shown to the user.
+ A user cannot check for updates when data (such as the feed or an update) is still being downloaded automatically in the background.
  
  This property is suitable to use for menu item validation for seeing if `-checkForUpdates` can be invoked.
  
@@ -163,7 +164,7 @@ SU_EXPORT @interface SPUUpdater : NSObject
  may be activated with the update resumed at a later point (automatically or manually).
  
  See also:
- - `canCheckForUpdates` property which is more suited for menu item validation.
+ - `canCheckForUpdates` property which is more suited for menu item validation and deciding if the user can initiate update checks.
  -  `-[SPUUpdaterDelegate updater:didFinishUpdateCycleForUpdateCheck:error:]` which lets the updater delegate know when an update cycle and session finishes.
  */
 @property (nonatomic, readonly) BOOL sessionInProgress;
@@ -247,7 +248,9 @@ SU_EXPORT @interface SPUUpdater : NSObject
  By default the user agent string returned is in the format:
  $(BundleDisplayName)/$(BundleDisplayVersion) Sparkle/$(SparkleDisplayVersion)
  
- BundleDisplayVersion is derived from the application Info.plist's CFBundleShortVersionString.
+ BundleDisplayVersion is derived from the main application's Info.plist's CFBundleShortVersionString.
+ 
+ Note if Sparkle is being used to update another application, the bundle information retrieved is from the main application performing the updating.
  
  This default implementation can be overrided.
  */
@@ -279,6 +282,9 @@ SU_EXPORT @interface SPUUpdater : NSObject
 /**
  Appropriately schedules or cancels the update checking timer according to the preferences for time interval and automatic checks.
 
+ If you change the `updateCheckInterval` or `automaticallyChecksForUpdates` properties, the update cycle will be reset automatically after a short delay.
+ The update cycle is also started automatically after the updater is started. In all these cases, this method should not be called directly.
+ 
  This call does not change the date of the next check, but only the internal timer.
  */
 - (void)resetUpdateCycle;

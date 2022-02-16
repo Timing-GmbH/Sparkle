@@ -31,6 +31,7 @@
 #import "SPUUpdaterTimer.h"
 #import "SPUResumableUpdate.h"
 #import "SUSignatures.h"
+#import "SPUUserAgent+Private.h"
 
 
 #include "AppKitPrevention.h"
@@ -50,6 +51,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
 @property (weak, readonly, nullable) id<SPUUpdaterDelegate> delegate;
 @property (nonatomic) id <SPUUpdateDriver> driver;
 @property (nonatomic, readonly) SUHost *host;
+@property (nonatomic, readonly) SUHost *mainBundleHost;
 @property (nonatomic, readonly) NSBundle *applicationBundle;
 @property (nonatomic, readonly) NSBundle *sparkleBundle;
 @property (nonatomic, readonly) SPUUpdaterSettings *updaterSettings;
@@ -72,10 +74,11 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
 
 @synthesize delegate = _delegate;
 @synthesize userDriver = _userDriver;
-@synthesize userAgentString = customUserAgentString;
+@synthesize userAgentString = _userAgentString;
 @synthesize httpHeaders;
 @synthesize driver;
 @synthesize host = _host;
+@synthesize mainBundleHost = _mainBundleHost;
 @synthesize applicationBundle = _applicationBundle;
 @synthesize updaterSettings = _updaterSettings;
 @synthesize updaterCycle = _updaterCycle;
@@ -117,6 +120,13 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
         _userDriver = userDriver;
         
         _delegate = delegate;
+        
+        // Set up default user agent
+        // Use the main bundle rather than the bundle to update for retrieving user agent information from
+        // We want the user agent to reflect the updater that is doing the updating
+        SUHost *mainBundleHost = [[SUHost alloc] initWithBundle:[NSBundle mainBundle]];
+        _userAgentString = SPUMakeUserAgentWithHost(mainBundleHost, nil);
+        _mainBundleHost = mainBundleHost;
     }
     
     return self;
@@ -152,7 +162,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
         return YES;
     }
     
-    if (![self checkIfConfiguredProperlyAndRequireFeedURL:NO error:error]) {
+    if (![self checkIfConfiguredProperlyAndRequireFeedURL:NO validateXPCServices:YES error:error]) {
         return NO;
     }
     
@@ -183,7 +193,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
     return ([bundle objectForInfoDictionaryKey:@"NSAppTransportSecurity"] == nil);
 }
 
-- (BOOL)checkIfConfiguredProperlyAndRequireFeedURL:(BOOL)requireFeedURL error:(NSError * __autoreleasing *)error
+- (BOOL)checkIfConfiguredProperlyAndRequireFeedURL:(BOOL)requireFeedURL validateXPCServices:(BOOL)validateXPCServices error:(NSError * __autoreleasing *)error
 {
     NSString *hostName = self.host.name;
     
@@ -208,6 +218,42 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
         return NO;
     }
     
+    SUHost *mainBundleHost = self.mainBundleHost;
+    if (validateXPCServices) {
+        // Check that all enabled XPC Services are embedded
+        NSArray<NSString *> *xpcServiceIDs = @[@INSTALLER_LAUNCHER_BUNDLE_ID, @DOWNLOADER_BUNDLE_ID, @INSTALLER_CONNECTION_BUNDLE_ID, @INSTALLER_STATUS_BUNDLE_ID];
+        NSArray<NSString *> *xpcServiceEnabledKeys = @[SUEnableInstallerLauncherServiceKey, SUEnableDownloaderServiceKey, SUEnableInstallerConnectionServiceKey, SUEnableInstallerStatusServiceKey];
+        NSUInteger xpcServiceCount = xpcServiceIDs.count;
+        
+        for (NSUInteger xpcServiceIndex = 0; xpcServiceIndex < xpcServiceCount; xpcServiceIndex++) {
+            NSString *xpcServiceEnabledKey = xpcServiceEnabledKeys[xpcServiceIndex];
+            NSString *xpcServiceBundleName = [xpcServiceIDs[xpcServiceIndex] stringByAppendingPathExtension:@"xpc"];
+            
+            if ([mainBundleHost boolForInfoDictionaryKey:xpcServiceEnabledKey]) {
+                NSURL *xpcServiceBundleURL = [[self.sparkleBundle.bundleURL URLByAppendingPathComponent:@"XPCServices"] URLByAppendingPathComponent:xpcServiceBundleName];
+                
+                if (![xpcServiceBundleURL checkResourceIsReachableAndReturnError:NULL]) {
+                    if (error != NULL) {
+                        *error = [NSError errorWithDomain:SUSparkleErrorDomain code:SUInvalidUpdaterError userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"XPC Service is enabled (%@) but does not exist: %@", xpcServiceEnabledKey, xpcServiceBundleURL.path] }];
+                    }
+                    
+                    return NO;
+                }
+            }
+            
+            // Make sure the app isn't bundling XPC Services directly
+            NSURL *mainBundleXPCServiceURL = [[[mainBundleHost.bundle.bundleURL URLByAppendingPathComponent:@"Contents"] URLByAppendingPathComponent:@"XPCServices"] URLByAppendingPathComponent:xpcServiceBundleName];
+            
+            if ([mainBundleXPCServiceURL checkResourceIsReachableAndReturnError:NULL]) {
+                if (error != NULL) {
+                    *error = [NSError errorWithDomain:SUSparkleErrorDomain code:SUInvalidUpdaterError userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"XPC Service (%@) must be in the Sparkle framework, not in the application bundle (%@). Please visit https://sparkle-project.org/documentation/sandboxing/ for up to date Sandboxing instructions.", xpcServiceBundleName, mainBundleXPCServiceURL.path] }];
+                }
+                
+                return NO;
+            }
+        }
+    }
+    
     BOOL servingOverHttps = NO;
     NSError *feedError = nil;
     NSURL *feedURL = [self retrieveFeedURL:&feedError];
@@ -220,18 +266,26 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
         }
     }
     
-    NSBundle *mainBundle = [NSBundle mainBundle];
-    BOOL updatingMainBundle = [self.host.bundle isEqualTo:mainBundle];
+    BOOL updatingMainBundle = [self.host.bundle isEqualTo:mainBundleHost.bundle];
     
     if (feedURL != nil) {
         servingOverHttps = [[[feedURL scheme] lowercaseString] isEqualToString:@"https"];
-        if (!servingOverHttps) {
-            BOOL foundXPCPersistentDownloaderService = NO;
-            BOOL foundATSPersistentIssue = [self checkATSIssueForBundle:SPUXPCServiceBundle(@DOWNLOADER_BUNDLE_ID) getBundleExists:&foundXPCPersistentDownloaderService];
+        if (!servingOverHttps && !self.loggedATSWarning) {
+            BOOL foundXPCDownloaderService = NO;
+            
+            NSBundle *downloaderBundle;
+            if ([mainBundleHost boolForInfoDictionaryKey:SUEnableDownloaderServiceKey]) {
+                NSURL *downloaderServiceBundleURL = [[[self.sparkleBundle.bundleURL URLByAppendingPathComponent:@"XPCServices"] URLByAppendingPathComponent:@DOWNLOADER_BUNDLE_ID] URLByAppendingPathExtension:@"xpc"];
+                downloaderBundle = [NSBundle bundleWithURL:downloaderServiceBundleURL];
+            } else {
+                downloaderBundle = nil;
+            }
+            
+            BOOL foundATSPersistentIssue = [self checkATSIssueForBundle:downloaderBundle getBundleExists:&foundXPCDownloaderService];
             
             BOOL foundATSMainBundleIssue = NO;
-            if (!foundATSPersistentIssue && !foundXPCPersistentDownloaderService) {
-                BOOL foundATSIssue = ([mainBundle objectForInfoDictionaryKey:@"NSAppTransportSecurity"] == nil);
+            if (!foundATSPersistentIssue && !foundXPCDownloaderService) {
+                BOOL foundATSIssue = ([mainBundleHost objectForInfoDictionaryKey:@"NSAppTransportSecurity"] == nil);
                 
                 if (updatingMainBundle) {
                     // The only way we'll know for sure if there is an issue is if the main bundle is the same as the one we're updating
@@ -241,12 +295,10 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
             }
             
             if (foundATSPersistentIssue || foundATSMainBundleIssue) {
-                if (!self.loggedATSWarning) {
-                    // Just log a warning. Don't outright fail in case we are wrong (eg: app is linked on an old SDK where ATS doesn't take effect)
-                    SULog(SULogLevelDefault, @"The feed URL (%@) may need to change to use HTTPS.\nFor more information: https://sparkle-project.org/documentation/app-transport-security", [feedURL absoluteString]);
-                    
-                    self.loggedATSWarning = YES;
-                }
+                // Just log a warning. Don't outright fail in case we are wrong (eg: app is linked on an old SDK where ATS doesn't take effect)
+                SULog(SULogLevelDefault, @"The feed URL (%@) may need to change to use HTTPS.\nFor more information: https://sparkle-project.org/documentation/app-transport-security", [feedURL absoluteString]);
+                
+                self.loggedATSWarning = YES;
             }
         }
     }
@@ -291,13 +343,6 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
             SULog(SULogLevelError, @"Error: Serving updates without an EdDSA key is insecure and deprecated. DSA support may be removed in a future Sparkle release. Please migrate to using EdDSA (ed25519). Visit Sparkle's documentation for migration information: https://sparkle-project.org/documentation/#3-segue-for-security-concerns");
             
             self.loggedNoSecureKeyWarning = YES;
-        }
-    }
-    
-    // Check XPC Services are functional
-    for (NSString *xpcServiceID in @[@INSTALLER_LAUNCHER_BUNDLE_ID, @DOWNLOADER_BUNDLE_ID, @INSTALLER_CONNECTION_BUNDLE_ID, @INSTALLER_STATUS_BUNDLE_ID]) {
-        if (!SPUXPCValidateServiceIfBundleExists(xpcServiceID, self.sparkleBundle, error)) {
-            return NO;
         }
     }
     
@@ -364,7 +409,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
         // We start the update checks and register as observer for changes after the prompt finishes
     } else {
         // We check if the user's said they want updates, or they haven't said anything, and the default is set to checking.
-        [self scheduleNextUpdateCheckFiringImmediately:NO];
+        [self scheduleNextUpdateCheckFiringImmediately:NO usingCurrentDate:YES];
     }
 }
 
@@ -394,7 +439,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
 }
 
 // Note this method is never called when sessionInProgress is YES
-- (void)scheduleNextUpdateCheckFiringImmediately:(BOOL)firingImmediately
+- (void)scheduleNextUpdateCheckFiringImmediately:(BOOL)firingImmediately usingCurrentDate:(BOOL)usingCurrentDate
 {
     [self.updaterTimer invalidate];
     
@@ -441,10 +486,21 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
             // This callback is asynchronous, so the timer may be set. Invalidate to make sure it isn't.
             [self.updaterTimer invalidate];
             
-            // How long has it been since last we checked for an update?
-            NSDate *lastCheckDate = [self lastUpdateCheckDate];
-            if (!lastCheckDate) { lastCheckDate = [NSDate distantPast]; }
-            NSTimeInterval intervalSinceCheck = [[NSDate date] timeIntervalSinceDate:lastCheckDate];
+            NSTimeInterval intervalSinceCheck;
+            if (usingCurrentDate) {
+                // How long has it been since last we checked for an update?
+                NSDate *lastCheckDate = [self lastUpdateCheckDate];
+                if (!lastCheckDate) { lastCheckDate = [NSDate distantPast]; }
+                intervalSinceCheck = [[NSDate date] timeIntervalSinceDate:lastCheckDate];
+                if (intervalSinceCheck < 0) {
+                    // Last update check date is in the future and bogus, so reset it to current date
+                    [self updateLastUpdateCheckDate];
+                    
+                    intervalSinceCheck = 0;
+                }
+            } else {
+                intervalSinceCheck = 0;
+            }
             
             // Now we want to figure out how long until we check again.
             if (updateCheckInterval < SUMinimumUpdateCheckInterval)
@@ -639,7 +695,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
                 // Ensure the delegate doesn't start a new session when being notified of the previous one ending
                 if (!strongSelf.sessionInProgress) {
                     if (shouldScheduleNextUpdateCheck) {
-                        [strongSelf scheduleNextUpdateCheckFiringImmediately:NO];
+                        [strongSelf scheduleNextUpdateCheckFiringImmediately:NO usingCurrentDate:NO];
                     } else {
                         SULog(SULogLevelDefault, @"Disabling scheduled updates..");
                     }
@@ -666,7 +722,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
     // Because an application can change the configuration (eg: the feed url) at any point, we should always check if it's valid
     // We will not schedule a next update check if the bundle is misconfigured
     NSError *configurationError = nil;
-    if (![self checkIfConfiguredProperlyAndRequireFeedURL:YES error:&configurationError]) {
+    if (![self checkIfConfiguredProperlyAndRequireFeedURL:YES validateXPCServices:NO error:&configurationError]) {
         SULog(SULogLevelError, @"Sparkle configuration error (%ld): %@", (long)configurationError.code, configurationError.localizedDescription);
         
         abortUpdateDriver(configurationError, NO);
@@ -690,7 +746,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
             
             // Ensure the delegate doesn't start a new session when being notified of the previous one ending
             if (!strongSelf.sessionInProgress) {
-                [strongSelf scheduleNextUpdateCheckFiringImmediately:shouldShowUpdateImmediately];
+                [strongSelf scheduleNextUpdateCheckFiringImmediately:shouldShowUpdateImmediately usingCurrentDate:NO];
             }
         }
     }];
@@ -716,7 +772,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
             abortUpdateDriver([NSError errorWithDomain:SUSparkleErrorDomain code:SUInvalidFeedURLError userInfo:@{ NSLocalizedDescriptionKey: @"Sparkle cannot form a valid feed URL." }], NO);
         } else {
             // Check for new updates
-            [self.driver checkForUpdatesAtAppcastURL:theFeedURL withUserAgent:[self userAgentString] httpHeaders:[self httpHeaders]];
+            [self.driver checkForUpdatesAtAppcastURL:theFeedURL withUserAgent:self.userAgentString httpHeaders:[self httpHeaders]];
         }
     }
 }
@@ -735,7 +791,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
     
     if (!self.sessionInProgress) {
         [self cancelNextUpdateCycle];
-        [self scheduleNextUpdateCheckFiringImmediately:NO];
+        [self scheduleNextUpdateCheckFiringImmediately:NO usingCurrentDate:YES];
     }
 }
 
@@ -844,26 +900,6 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
         return nil;
     }
     return feedURL;
-}
-
-- (NSString *)userAgentString
-{
-    if (customUserAgentString) {
-        return customUserAgentString;
-    }
-
-    NSString *userAgent = [NSString stringWithFormat:@"%@/%@ Sparkle/%@", [self.host name], [self.host displayVersion], @""MARKETING_VERSION];
-    NSData *cleanedAgent = [userAgent dataUsingEncoding:NSASCIIStringEncoding allowLossyConversion:YES];
-    
-    NSString *result = @"";
-    if (cleanedAgent != nil) {
-        NSString *cleanedAgentString = [[NSString alloc] initWithData:(NSData * _Nonnull)cleanedAgent encoding:NSASCIIStringEncoding];
-        if (cleanedAgentString != nil) {
-            result = cleanedAgentString;
-        }
-    }
-    
-    return result;
 }
 
 - (void)setSendsSystemProfile:(BOOL)sendsSystemProfile

@@ -164,6 +164,17 @@ SU_EXPORT @interface SUAppcastItem : NSObject<NSSecureCoding>
 @property (copy, readonly, nullable) NSString *itemDescription;
 
 /**
+ The full release notes URL of the appcast item if provided.
+ 
+ The link should point to the product's full changelog.
+ 
+ Sparkle's standard user interface offers to show these full release notes when a user checks for a new update and no new update is available.
+ 
+ This is extracted from the @c <sparkle:fullReleaseNotesLink> element.
+ */
+@property (readonly, nullable) NSURL *fullReleaseNotesURL;
+
+/**
  The required minimum system operating version string for this update if provided.
  
  This version string should contain three period-separated components.

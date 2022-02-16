@@ -29,7 +29,27 @@ func text(_ text: String) -> XMLNode {
     return XMLNode.text(withStringValue: text) as! XMLNode
 }
 
-func writeAppcast(appcastDestPath: URL, updates: [ArchiveItem], newVersions: Set<String>?, maxNewVersionsInFeed: Int, link: String?, newChannel: String?, majorVersion: String?, phasedRolloutInterval: Int?, criticalUpdateVersion: String?, informationalUpdateVersions: [String]?) throws -> (numNewUpdates: Int, numExistingUpdates: Int) {
+func extractVersion(parent: XMLNode) -> String? {
+    guard let itemElement = parent as? XMLElement else {
+        return nil
+    }
+    
+    // Look for version attribute in enclosure
+    if let enclosure = findElement(name: "enclosure", parent: itemElement) {
+        if let versionAttribute = enclosure.attribute(forName: SUAppcastAttributeVersion) {
+            return versionAttribute.stringValue
+        }
+    }
+
+    // Look for top level version element
+    if let versionElement = findElement(name: SUAppcastElementVersion, parent: itemElement) {
+        return versionElement.stringValue
+    }
+
+    return nil
+}
+
+func writeAppcast(appcastDestPath: URL, updates: [ArchiveItem], newVersions: Set<String>?, maxNewVersionsInFeed: Int, fullReleaseNotesLink: String?, link: String?, newChannel: String?, majorVersion: String?, phasedRolloutInterval: Int?, criticalUpdateVersion: String?, informationalUpdateVersions: [String]?) throws -> (numNewUpdates: Int, numExistingUpdates: Int) {
     let appBaseName = updates[0].appPath.deletingPathExtension().lastPathComponent
 
     let sparkleNS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
@@ -68,6 +88,8 @@ func writeAppcast(appcastDestPath: URL, updates: [ArchiveItem], newVersions: Set
     
     var numNewUpdates = 0
     var numExistingUpdates = 0
+    
+    let versionComparator = SUStandardVersionComparator()
 
     var numItems = 0
     for update in updates {
@@ -102,12 +124,34 @@ func writeAppcast(appcastDestPath: URL, updates: [ArchiveItem], newVersions: Set
 
         if createNewItem {
             item = XMLElement.element(withName: "item") as! XMLElement
+            
+            // When we insert a new item, find the best place to insert the new update item in
+            // This takes account of existing items and even ones that we don't have existing info on
+            var foundBestUpdateInsertion = false
+            if let itemNodes = try? channel.nodes(forXPath: "item") {
+                for childItemNode in itemNodes {
+                    guard let childItemNode = childItemNode as? XMLElement else {
+                        continue
+                    }
+                    
+                    guard let childItemVersion = extractVersion(parent: childItemNode) else {
+                        continue
+                    }
+
+                    if versionComparator.compareVersion(update.version, toVersion: childItemVersion) == .orderedDescending {
+                        channel.insertChild(item, at: childItemNode.index)
+                        foundBestUpdateInsertion = true
+                        break
+                    }
+                }
+            }
+
+            if !foundBestUpdateInsertion {
+                channel.addChild(item)
+            }
         } else {
             item = existingItems[0] as! XMLElement
-            // Remove the existing item to make sure it's inserted in the correct order when we re-add it
-            channel.removeChild(at: item.index)
         }
-        channel.addChild(item)
 
         if nil == findElement(name: "title", parent: item) {
             item.addChild(XMLElement.element(withName: "title", stringValue: update.shortVersion) as! XMLElement)
@@ -122,6 +166,12 @@ func writeAppcast(appcastDestPath: URL, updates: [ArchiveItem], newVersions: Set
                let linkElement = XMLElement.element(withName: SURSSElementLink, uri: sparkleNS) as? XMLElement {
                 linkElement.setChildren([text(link)])
                 item.addChild(linkElement)
+            }
+            
+            if let fullReleaseNotesLink = fullReleaseNotesLink,
+               let fullReleaseNotesElement = XMLElement.element(withName: SUAppcastElementFullReleaseNotesLink, uri: sparkleNS) as? XMLElement {
+                fullReleaseNotesElement.setChildren([text(fullReleaseNotesLink)])
+                item.addChild(fullReleaseNotesElement)
             }
             
             // Set new channel name
