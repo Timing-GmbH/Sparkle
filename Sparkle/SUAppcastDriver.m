@@ -334,10 +334,12 @@
 + (BOOL)item:(SUAppcastItem *)ui containsSkippedUpdate:(SPUSkippedUpdate * _Nullable)skippedUpdate hostPassesSkippedMajorVersion:(BOOL)hostPassesSkippedMajorVersion versionComparator:(id<SUVersionComparison>)versionComparator
 {
     NSString *skippedMajorVersion = skippedUpdate.majorVersion;
+    NSString *skippedMajorSubreleaseVersion = skippedUpdate.majorSubreleaseVersion;
     
-    if (!hostPassesSkippedMajorVersion && skippedMajorVersion != nil && [versionComparator compareVersion:skippedMajorVersion toVersion:ui.versionString] != NSOrderedDescending) {
-        // Item is on a greater or equal version than a major version we've skipped
-        // So we skip this item
+    if (!hostPassesSkippedMajorVersion && skippedMajorVersion != nil && ui.minimumAutoupdateVersion != nil && [versionComparator compareVersion:skippedMajorVersion toVersion:(NSString * _Nonnull)ui.minimumAutoupdateVersion] != NSOrderedAscending && (ui.ignoreSkippedUpgradesBelowVersion == nil || (skippedMajorSubreleaseVersion != nil && [versionComparator compareVersion:skippedMajorSubreleaseVersion toVersion:(NSString * _Nonnull)ui.ignoreSkippedUpgradesBelowVersion] != NSOrderedAscending))) {
+        // If skipped major version is >= than the item's minimumAutoupdateVersion, we can skip the item.
+        // But if there is an ignoreSkippedUpgradesBelowVersion, we can only skip the item if the last skipped subrelease
+        // version is >= than that version provided by the item
         return YES;
     }
     
