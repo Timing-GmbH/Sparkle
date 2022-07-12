@@ -94,7 +94,7 @@ NSString *const SUUpdaterAppcastNotificationKey = @"SUUpdaterAppCastNotification
 @synthesize loggedNoSecureKeyWarning = _loggedNoSecureKeyWarning;
 
 #if DEBUG
-+ (void)load
++ (void)initialize
 {
     // We're using NSLog instead of SULog here because we don't want to start Sparkle's logger here,
     // and because this is not really an error, just a warning notice
