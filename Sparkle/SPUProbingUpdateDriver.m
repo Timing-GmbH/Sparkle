@@ -14,15 +14,13 @@
 
 @interface SPUProbingUpdateDriver () <SPUBasicUpdateDriverDelegate>
 
-@property (nonatomic, readonly) SPUBasicUpdateDriver *basicDriver;
-@property (nonatomic) id<SPUResumableUpdate> resumableUpdate;
-
 @end
 
 @implementation SPUProbingUpdateDriver
-
-@synthesize basicDriver = _basicDriver;
-@synthesize resumableUpdate = _resumableUpdate;
+{
+    SPUBasicUpdateDriver *_basicDriver;
+    id<SPUResumableUpdate> _resumableUpdate;
+}
 
 - (instancetype)initWithHost:(SUHost *)host updater:(id)updater updaterDelegate:(id <SPUUpdaterDelegate>)updaterDelegate
 {
@@ -35,28 +33,32 @@
 
 - (void)setCompletionHandler:(SPUUpdateDriverCompletion)completionBlock
 {
-    [self.basicDriver setCompletionHandler:completionBlock];
+    [_basicDriver setCompletionHandler:completionBlock];
 }
 
 - (void)setUpdateShownHandler:(void (^)(void))updateShownHandler
 {
 }
 
+- (void)setUpdateWillInstallHandler:(void (^)(void))updateWillInstallHandler
+{
+}
+
 - (void)checkForUpdatesAtAppcastURL:(NSURL *)appcastURL withUserAgent:(NSString *)userAgent httpHeaders:(NSDictionary * _Nullable)httpHeaders
 {
-    [self.basicDriver checkForUpdatesAtAppcastURL:appcastURL withUserAgent:userAgent httpHeaders:httpHeaders inBackground:YES];
+    [_basicDriver checkForUpdatesAtAppcastURL:appcastURL withUserAgent:userAgent httpHeaders:httpHeaders inBackground:YES];
 }
 
 - (void)resumeInstallingUpdate
 {
-    [self.basicDriver resumeInstallingUpdate];
+    [_basicDriver resumeInstallingUpdate];
 }
 
 - (void)resumeUpdate:(id<SPUResumableUpdate>)resumableUpdate
 {
-    self.resumableUpdate = resumableUpdate;
+    _resumableUpdate = resumableUpdate;
     
-    [self.basicDriver resumeUpdate:resumableUpdate];
+    [_basicDriver resumeUpdate:resumableUpdate];
 }
 
 - (void)basicDriverDidFindUpdateWithAppcastItem:(SUAppcastItem *)__unused appcastItem secondaryAppcastItem:(SUAppcastItem * _Nullable)__unused secondaryAppcastItem systemDomain:(NSNumber * _Nullable)__unused systemDomain
@@ -82,7 +84,7 @@
 
 - (void)abortUpdateWithError:(nullable NSError *)error
 {
-    [self.basicDriver abortUpdateAndShowNextUpdateImmediately:NO resumableUpdate:self.resumableUpdate error:error];
+    [_basicDriver abortUpdateAndShowNextUpdateImmediately:NO resumableUpdate:_resumableUpdate error:error];
 }
 
 @end

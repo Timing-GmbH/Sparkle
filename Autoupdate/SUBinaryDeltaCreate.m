@@ -29,42 +29,47 @@
 extern int bsdiff(int argc, const char **argv);
 
 @interface CreateBinaryDeltaOperation : NSOperation
-@property (copy) NSString *relativePath;
-@property (copy) NSString *clonedRelativePath;
-@property (strong) NSString *resultPath;
-@property (strong) NSNumber *oldPermissions;
-@property (strong) NSNumber *permissions;
-@property (nonatomic) BOOL changingPermissions;
-@property (strong) NSString *_fromPath;
-@property (strong) NSString *_toPath;
-- (id)initWithRelativePath:(NSString *)relativePath clonedRelativePath:(NSString *)clonedRelativePath oldTree:(NSString *)oldTree newTree:(NSString *)newTree oldPermissions:(NSNumber *)oldPermissions newPermissions:(NSNumber *)permissions changingPermissions:(BOOL)changingPermissions;
+
+@property (nonatomic, copy, readonly) NSString *relativePath;
+@property (nonatomic, copy, readonly) NSString *clonedRelativePath;
+@property (nonatomic, readonly) NSString *resultPath;
+@property (nonatomic, readonly) NSNumber *oldPermissions;
+@property (nonatomic, readonly) NSNumber *permissions;
+@property (nonatomic, readonly) NSString *fromPath;
+@property (nonatomic, readonly) BOOL changingPermissions;
+
+- (id)initWithRelativePath:(NSString *)relativePath clonedRelativePath:(NSString *)clonedRelativePath oldTree:(NSString *)oldTree newTree:(NSString *)newTree oldPermissions:(NSNumber *)oldPermissions newPermissions:(NSNumber *)permissions changingPermissions:(BOOL)changingPermissions SPU_OBJC_DIRECT;
+
 @end
 
 @implementation CreateBinaryDeltaOperation
+{
+    NSString *_toPath;
+}
+
 @synthesize relativePath = _relativePath;
 @synthesize clonedRelativePath = _clonedRelativePath;
 @synthesize resultPath = _resultPath;
 @synthesize oldPermissions = _oldPermissions;
 @synthesize permissions = _permissions;
+@synthesize fromPath = _fromPath;
 @synthesize changingPermissions = _changingPermissions;
-@synthesize _fromPath = _fromPath;
-@synthesize _toPath = _toPath;
 
 - (id)initWithRelativePath:(NSString *)relativePath clonedRelativePath:(NSString *)clonedRelativePath oldTree:(NSString *)oldTree newTree:(NSString *)newTree oldPermissions:(NSNumber *)oldPermissions newPermissions:(NSNumber *)permissions changingPermissions:(BOOL)changingPermissions
 {
     if ((self = [super init])) {
-        self.relativePath = relativePath;
-        self.clonedRelativePath = clonedRelativePath;
-        self.oldPermissions = oldPermissions;
-        self.permissions = permissions;
-        self.changingPermissions = changingPermissions;
+        _relativePath = [relativePath copy];
+        _clonedRelativePath = [clonedRelativePath copy];
+        _oldPermissions = oldPermissions;
+        _permissions = permissions;
+        _changingPermissions = changingPermissions;
         
         if (clonedRelativePath == nil) {
-            self._fromPath = [oldTree stringByAppendingPathComponent:relativePath];
+            _fromPath = [oldTree stringByAppendingPathComponent:relativePath];
         } else {
-            self._fromPath = [oldTree stringByAppendingPathComponent:clonedRelativePath];
+            _fromPath = [oldTree stringByAppendingPathComponent:clonedRelativePath];
         }
-        self._toPath = [newTree stringByAppendingPathComponent:relativePath];
+        _toPath = [newTree stringByAppendingPathComponent:relativePath];
     }
     return self;
 }
@@ -72,10 +77,11 @@ extern int bsdiff(int argc, const char **argv);
 - (void)main
 {
     NSString *temporaryFile = temporaryFilename(@"BinaryDelta");
-    const char *argv[] = { "/usr/bin/bsdiff", [self._fromPath fileSystemRepresentation], [self._toPath fileSystemRepresentation], [temporaryFile fileSystemRepresentation] };
+    const char *argv[] = { "/usr/bin/bsdiff", [_fromPath fileSystemRepresentation], [_toPath fileSystemRepresentation], [temporaryFile fileSystemRepresentation] };
     int result = bsdiff(4, argv);
-    if (!result)
-        self.resultPath = temporaryFile;
+    if (result == 0) {
+        _resultPath = temporaryFile;
+    }
 }
 
 @end
@@ -440,6 +446,16 @@ BOOL createBinaryDelta(NSString *source, NSString *destination, NSString *patchF
         if (![key length]) {
             continue;
         }
+        
+        if ([key isEqualToString:CUSTOM_ICON_PATH]) {
+            if (verbose) {
+                fprintf(stderr, "\n");
+            }
+            if (error != NULL) {
+                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadUnknownError userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Diffing bundles with a custom icon set via a resource fork is not supported. Detected presence of %@", @(ent->fts_path)] }];
+            }
+            return NO;
+        }
 
         NSDictionary *info = infoForFile(ent);
         if (!info) {
@@ -453,6 +469,20 @@ BOOL createBinaryDelta(NSString *source, NSString *destination, NSString *patchF
         }
         originalTreeState[key] = info;
 
+        // Ensure Sparkle executable permissions are valid
+        if (ent->fts_info == FTS_F && [key.lastPathComponent isEqualToString:@"Sparkle"] && [key.stringByDeletingLastPathComponent.stringByDeletingLastPathComponent.stringByDeletingLastPathComponent.lastPathComponent isEqualToString:@"Sparkle.framework"]) {
+            mode_t permissions = (mode_t)[(NSNumber *)info[INFO_PERMISSIONS_KEY] shortValue];
+            if (permissions != VALID_SPARKLE_EXECUTABLE_PERMISSIONS) {
+                if (verbose) {
+                    fprintf(stderr, "\n");
+                }
+                if (error != NULL) {
+                    *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadUnknownError userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Permissions for Sparkle executable must be 0%o (found 0%o) on file %@", VALID_SPARKLE_EXECUTABLE_PERMISSIONS, permissions, @(ent->fts_path)] }];
+                }
+                return NO;
+            }
+        }
+        
         if (aclExists(ent)) {
             if (verbose) {
                 fprintf(stderr, "\n");
@@ -531,6 +561,16 @@ BOOL createBinaryDelta(NSString *source, NSString *destination, NSString *patchF
         if (![key length]) {
             continue;
         }
+        
+        if ([key isEqualToString:CUSTOM_ICON_PATH]) {
+            if (verbose) {
+                fprintf(stderr, "\n");
+            }
+            if (error != NULL) {
+                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadUnknownError userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Diffing bundles with a custom icon set via a resource fork is not supported. Detected presence of %@", @(ent->fts_path)] }];
+            }
+            return NO;
+        }
 
         NSDictionary *info = infoForFile(ent);
         if (!info) {
@@ -543,6 +583,20 @@ BOOL createBinaryDelta(NSString *source, NSString *destination, NSString *patchF
             return NO;
         }
 
+        // Ensure Sparkle executable permissions are valid
+        if (ent->fts_info == FTS_F && [key.lastPathComponent isEqualToString:@"Sparkle"] && [key.stringByDeletingLastPathComponent.stringByDeletingLastPathComponent.stringByDeletingLastPathComponent.lastPathComponent isEqualToString:@"Sparkle.framework"]) {
+            mode_t permissions = (mode_t)[(NSNumber *)info[INFO_PERMISSIONS_KEY] shortValue];
+            if (permissions != VALID_SPARKLE_EXECUTABLE_PERMISSIONS) {
+                if (verbose) {
+                    fprintf(stderr, "\n");
+                }
+                if (error != NULL) {
+                    *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadUnknownError userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Permissions for Sparkle executable must be 0%o (found 0%o) on file %@", VALID_SPARKLE_EXECUTABLE_PERMISSIONS, permissions, @(ent->fts_path)] }];
+                }
+                return NO;
+            }
+        }
+        
         // We should validate ACLs even if we don't store the info in the diff in the case of ACLs
         // We should also not allow files with code signed extended attributes since Apple doesn't recommend inserting these
         // inside an application, and since we don't preserve extended attribitutes anyway
@@ -656,7 +710,17 @@ BOOL createBinaryDelta(NSString *source, NSString *destination, NSString *patchF
     if (majorVersion >= SUBinaryDeltaMajorVersion3) {
         archive = [[SPUSparkleDeltaArchive alloc] initWithPatchFileForWriting:temporaryFile];
     } else {
+#if SPARKLE_BUILD_LEGACY_DELTA_SUPPORT
         archive = [[SPUXarDeltaArchive alloc] initWithPatchFileForWriting:temporaryFile];
+#else
+        if (verbose) {
+            fprintf(stderr, "\n");
+        }
+        if (error != NULL) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadUnknownError userInfo:@{ NSLocalizedDescriptionKey: @"Support for creating legacy delta updates is disabled" }];
+        }
+        return NO;
+#endif
     }
     
     SPUDeltaArchiveHeader *header = [[SPUDeltaArchiveHeader alloc] initWithCompression:compression compressionLevel:compressionLevel fileSystemCompression:foundFilesystemCompression majorVersion:majorVersion minorVersion:minorVersion beforeTreeHash:beforeHash afterTreeHash:afterHash];
@@ -870,7 +934,7 @@ BOOL createBinaryDelta(NSString *source, NSString *destination, NSString *patchF
 
     BOOL deltaOperationsFailed = NO;
     for (CreateBinaryDeltaOperation *operation in deltaOperations) {
-        NSString *resultPath = [operation resultPath];
+        NSString *resultPath = operation.resultPath;
         if (resultPath == nil) {
             if (verbose) {
                 fprintf(stderr, "\n");
@@ -904,7 +968,7 @@ BOOL createBinaryDelta(NSString *source, NSString *destination, NSString *patchF
         
         SPUDeltaArchiveItem *item = [[SPUDeltaArchiveItem alloc] initWithRelativeFilePath:relativePath commands:commands mode:mode.unsignedShortValue];
         item.itemFilePath = resultPath;
-        item.sourcePath = operation._fromPath;
+        item.sourcePath = operation.fromPath;
         item.clonedRelativePath = clonedRelativePath;
         
         [archive addItem:item];
@@ -924,7 +988,7 @@ BOOL createBinaryDelta(NSString *source, NSString *destination, NSString *patchF
     
     // Clean up operations after the archive has finished encoding
     for (CreateBinaryDeltaOperation *operation in deltaOperations) {
-        NSString *resultPath = [operation resultPath];
+        NSString *resultPath = operation.resultPath;
         if (resultPath != nil) {
             unlink(resultPath.fileSystemRepresentation);
         }

@@ -25,32 +25,26 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
     CLIErrorExitStatusInstallerInteractionNotAllowed = 3,
     CLIErrorExitStatusUpdateNotFound = 4,
     CLIErrorExitStatusUpdateCancelledAuthorization = 5,
-    CLIErrorExitStatusUpdatePermissionRequested = 6
+    CLIErrorExitStatusUpdatePermissionRequested = 6,
+    CLIErrorCodeCannotInstallInteractivePackageAsRoot = 7,
+    CLIErrorExitStatusInstallationWriteNoPermissionError = 8,
 };
 
 @interface SPUCommandLineDriver () <SPUUpdaterDelegate>
-
-@property (nonatomic, readonly) SPUUpdater *updater;
-@property (nonatomic, readonly) BOOL verbose;
-@property (nonatomic) BOOL probingForUpdates;
-@property (nonatomic, readonly) BOOL interactive;
-@property (nonatomic, readonly) BOOL allowMajorUpgrades;
-@property (nonatomic, readonly) NSSet<NSString *> *allowedChannels;
-@property (nonatomic, copy, readonly, nullable) NSString *customFeedURL;
-@property (nonatomic, readonly) SUUpdatePermissionResponse *updatePermissionResponse;
-
 @end
 
 @implementation SPUCommandLineDriver
-
-@synthesize updater = _updater;
-@synthesize verbose = _verbose;
-@synthesize probingForUpdates = _probingForUpdates;
-@synthesize interactive = _interactive;
-@synthesize allowMajorUpgrades = _allowMajorUpgrades;
-@synthesize allowedChannels = _allowedChannels;
-@synthesize customFeedURL = _customFeedURL;
-@synthesize updatePermissionResponse = _updatePermissionResponse;
+{
+    SPUUpdater *_updater;
+    SUUpdatePermissionResponse *_updatePermissionResponse;
+    NSSet<NSString *> *_allowedChannels;
+    NSString *_customFeedURL;
+    
+    BOOL _verbose;
+    BOOL _probingForUpdates;
+    BOOL _interactive;
+    BOOL _allowMajorUpgrades;
+}
 
 - (instancetype)initWithUpdateBundlePath:(NSString *)updateBundlePath applicationBundlePath:(nullable NSString *)applicationBundlePath allowedChannels:(NSSet<NSString *> *)allowedChannels customFeedURL:(nullable NSString *)customFeedURL userAgentName:(nullable NSString *)customUserAgentName updatePermissionResponse:(nullable SUUpdatePermissionResponse *)updatePermissionResponse deferInstallation:(BOOL)deferInstallation interactiveInstallation:(BOOL)interactiveInstallation allowMajorUpgrades:(BOOL)allowMajorUpgrades verbose:(BOOL)verbose
 {
@@ -114,7 +108,7 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
 
 - (void)updater:(SPUUpdater *)__unused updater willScheduleUpdateCheckAfterDelay:(NSTimeInterval)delay __attribute__((noreturn))
 {
-    if (self.verbose) {
+    if (_verbose) {
         fprintf(stderr, "Last update check occurred too soon. Try again after %0.0f second(s).", delay);
     }
     exit(EXIT_SUCCESS);
@@ -122,7 +116,7 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
 
 - (void)updaterWillNotScheduleUpdateCheck:(SPUUpdater *)__unused updater __attribute__((noreturn))
 {
-    if (self.verbose) {
+    if (_verbose) {
         fprintf(stderr, "Automatic update checks are disabled. Exiting.\n");
     }
     exit(EXIT_SUCCESS);
@@ -130,7 +124,7 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
 
 - (BOOL)updaterShouldPromptForPermissionToCheckForUpdates:(SPUUpdater *)__unused updater
 {
-    if (self.updatePermissionResponse == nil) {
+    if (_updatePermissionResponse == nil) {
         // We don't want to make this decision on behalf of the user.
         fprintf(stderr, "Error: Asked to grant update permission and --grant-automatic-checks is not specified. Exiting.\n");
         exit(CLIErrorExitStatusUpdatePermissionRequested);
@@ -145,12 +139,12 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
     switch (updateCheck) {
         case SPUUpdateCheckUpdates:
         case SPUUpdateCheckUpdatesInBackground:
-            if (self.interactive || !SPUSystemNeedsAuthorizationAccessForBundlePath(self.updater.hostBundle.bundlePath)) {
+            if (_interactive || !SPUSystemNeedsAuthorizationAccessForBundlePath(_updater.hostBundle.bundlePath)) {
                 return YES;
             }
             
             if (error != NULL) {
-                *error = [NSError errorWithDomain:SPARKLE_CLI_ERROR_DOMAIN code:CLIErrorCodeCannotPerformCheck userInfo:@{ NSLocalizedDescriptionKey: @"A new update check cannot be performed because updating this bundle will require user authorization. Please use --interactive to allow this." }];
+                *error = [NSError errorWithDomain:SPARKLE_CLI_ERROR_DOMAIN code:CLIErrorCodeCannotPerformCheck userInfo:@{ NSLocalizedDescriptionKey: @"A new update check cannot be performed because updating this bundle will require user authorization. Please use --interactive or run as root to allow this." }];
             }
             
             return NO;
@@ -168,7 +162,7 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
     }
     
     // If we encounter a major upgrade and not allowed to act on it, then error
-    if (updateItem.majorUpgrade && !self.allowMajorUpgrades) {
+    if (updateItem.majorUpgrade && !_allowMajorUpgrades) {
         if (error != NULL) {
             *error = [NSError errorWithDomain:SPARKLE_CLI_ERROR_DOMAIN code:CLIErrorCodeCannotInstallMajorUpgrade userInfo:@{ NSLocalizedDescriptionKey: @"Major upgrade available but not allowed to install it. Pass --allow-major-upgrades to allow this." }];
         }
@@ -176,12 +170,14 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
         return NO;
     }
     
-    if (!self.interactive && ![updateItem.installationType isEqualToString:SPUInstallationTypeApplication]) {
-        if (error != NULL) {
-            *error = [NSError errorWithDomain:SPARKLE_CLI_ERROR_DOMAIN code:CLIErrorCodeCannotInstallPackage userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"A new package-based update has been found (%@), but installing it will require user authorization. Please use --interactive to allow this.", updateItem.versionString] }];
+    if (!_interactive && geteuid() != 0) { // applicable for non-root only
+        if (![updateItem.installationType isEqualToString:SPUInstallationTypeApplication]) {
+            // Any package based updates will require authorization and therefore interaction
+            if (error != NULL) {
+                *error = [NSError errorWithDomain:SPARKLE_CLI_ERROR_DOMAIN code:CLIErrorCodeCannotInstallPackage userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"A new package-based update has been found (%@), but installing it will require user authorization. Please use --interactive to allow this.", updateItem.versionString] }];
+            }
+            return NO;
         }
-        
-        return NO;
     }
     
     return YES;
@@ -189,19 +185,19 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
 
 - (NSSet<NSString *> *)allowedChannelsForUpdater:(SPUUpdater *)__unused updater
 {
-    return self.allowedChannels;
+    return _allowedChannels;
 }
 
 - (nullable NSString *)feedURLStringForUpdater:(SPUUpdater *)__unused updater
 {
-    return self.customFeedURL;
+    return _customFeedURL;
 }
 
 // In case we find an update during probing
 - (void)updater:(SPUUpdater *)__unused updater didFindValidUpdate:(SUAppcastItem *)item
 {
-    if (self.probingForUpdates) {
-        if (self.verbose) {
+    if (_probingForUpdates) {
+        if (_verbose) {
             if (item.majorUpgrade) {
                 fprintf(stderr, "Major upgrade available.\n");
             } else {
@@ -214,7 +210,7 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
 - (void)updater:(SPUUpdater *)updater didFinishUpdateCycleForUpdateCheck:(SPUUpdateCheck)__unused updateCheck error:(nullable NSError *)error __attribute__((noreturn))
 {
     if (error == nil) {
-        if (self.verbose) {
+        if (_verbose) {
             fprintf(stderr, "Exiting.\n");
         }
         exit(EXIT_SUCCESS);
@@ -229,17 +225,27 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
             exit(CLIErrorExitStatusInstallerInteractionNotAllowed);
         }
     } else if (error.code == SUNoUpdateError) {
-        if (self.verbose) {
+        if (_verbose) {
             fprintf(stderr, "No new update available!\n");
         }
         exit(CLIErrorExitStatusUpdateNotFound);
     } else if (error.code == SUInstallationCanceledError) {
         // User canceled authorization themselves
-        assert(self.interactive);
-        if (self.verbose) {
+        assert(_interactive);
+        if (_verbose) {
             fprintf(stderr, "Update was cancelled.\n");
         }
         exit(CLIErrorExitStatusUpdateCancelledAuthorization);
+    } else if (error.code == SUInstallationRootInteractiveError) {
+        fprintf(stderr, "%s\n", error.localizedDescription.UTF8String);
+        exit(CLIErrorCodeCannotInstallInteractivePackageAsRoot);
+    } else if (error.code == SUInstallationWriteNoPermissionError) {
+        fprintf(stderr, "Error: %s", error.localizedDescription.UTF8String);
+        if (error.localizedRecoverySuggestion != nil) {
+            fprintf(stderr, " %s", error.localizedRecoverySuggestion.UTF8String);
+        }
+        fprintf(stderr, "\n");
+        exit(CLIErrorExitStatusInstallationWriteNoPermissionError);
     } else {
         fprintf(stderr, "Error: Update has failed due to error %ld (%s). %s\n", (long)error.code, error.domain.UTF8String, error.localizedDescription.UTF8String);
         exit(EXIT_FAILURE);
@@ -248,13 +254,13 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
 
 - (BOOL)updater:(SPUUpdater *)updater shouldDownloadReleaseNotesForUpdate:(nonnull SUAppcastItem *)__unused item
 {
-    return self.verbose;
+    return _verbose;
 }
 
-- (void)startUpdater
+- (void)startUpdater SPU_OBJC_DIRECT
 {
     NSError *updaterError = nil;
-    if (![self.updater startUpdater:&updaterError]) {
+    if (![_updater startUpdater:&updaterError]) {
         fprintf(stderr, "Error: Failed to initialize updater with error (%ld): %s\n", updaterError.code, updaterError.localizedDescription.UTF8String);
         exit(EXIT_FAILURE);
     }
@@ -266,7 +272,7 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
     
     if (checkForUpdatesNow) {
         // When we start the updater, this scheduled check will start afterwards too
-        [self.updater checkForUpdates];
+        [_updater checkForUpdates];
     }
 }
 
@@ -275,8 +281,8 @@ typedef NS_ENUM(int, CLIErrorExitStatus) {
     [self startUpdater];
     
     // When we start the updater, this info check will start afterwards too
-    self.probingForUpdates = YES;
-    [self.updater checkForUpdateInformation];
+    _probingForUpdates = YES;
+    [_updater checkForUpdateInformation];
 }
 
 @end

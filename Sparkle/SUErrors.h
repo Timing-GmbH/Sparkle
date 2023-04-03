@@ -9,16 +9,9 @@
 #ifndef SUERRORS_H
 #define SUERRORS_H
 
-#if __has_feature(modules)
-#if __has_warning("-Watimport-in-framework-header")
-#pragma clang diagnostic ignored "-Watimport-in-framework-header"
-#endif
-@import Foundation;
-#else
 #import <Foundation/Foundation.h>
-#endif
 
-#if defined(BUILDING_SPARKLE_TOOL) || defined(BUILDING_SPARKLE_TESTS)
+#if defined(BUILDING_SPARKLE_SOURCES_EXTERNALLY)
 // Ignore incorrect warning
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wquoted-include-in-framework-header"
@@ -73,6 +66,8 @@ typedef NS_ENUM(OSStatus, SUError) {
     SUInstallationAuthorizeLaterError = 4008,
     SUNotValidUpdateError = 4009,
     SUAgentInvalidationError = 4010,
+    SUInstallationRootInteractiveError = 4011,
+    SUInstallationWriteNoPermissionError = 4012,
     
     // API misuse errors.
     SUIncorrectAPIUsageError = 5000

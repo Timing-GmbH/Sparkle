@@ -27,11 +27,13 @@ NS_ASSUME_NONNULL_BEGIN
 @class SUHost;
 @protocol SPUUserDriver, SPUUpdaterDelegate;
 
-@interface SPUUIBasedUpdateDriver : NSObject
+SPU_OBJC_DIRECT_MEMBERS @interface SPUUIBasedUpdateDriver : NSObject
 
 - (instancetype)initWithHost:(SUHost *)host applicationBundle:(NSBundle *)applicationBundle updater:(id)updater userDriver:(id <SPUUserDriver>)userDriver userInitiated:(BOOL)userInitiated updaterDelegate:(nullable id <SPUUpdaterDelegate>)updaterDelegate delegate:(id<SPUUIBasedUpdateDriverDelegate>)delegate;
 
 - (void)setCompletionHandler:(SPUUpdateDriverCompletion)completionBlock;
+
+- (void)setUpdateWillInstallHandler:(void (^)(void))updateWillInstallHandler;
 
 - (void)checkForUpdatesAtAppcastURL:(NSURL *)appcastURL withUserAgent:(NSString *)userAgent httpHeaders:(NSDictionary * _Nullable)httpHeaders inBackground:(BOOL)background;
 

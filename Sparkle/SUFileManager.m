@@ -21,10 +21,6 @@ extern int renamex_np(const char *, const char *, unsigned int) __attribute__((w
 
 static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
 
-#pragma clang diagnostic push
-// Use direct access because it's easier, clearer, and faster
-#pragma clang diagnostic ignored "-Wdirect-ivar-access"
-
 @implementation SUFileManager
 {
     NSFileManager *_fileManager;
@@ -42,6 +38,9 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
 // -[NSFileManager attributesOfItemAtPath:error:] won't follow symbolic links
 
 - (BOOL)_itemExistsAtURL:(NSURL *)fileURL
+#ifndef BUILDING_SPARKLE_TESTS
+SPU_OBJC_DIRECT
+#endif
 {
     NSString *path = fileURL.path;
     if (path == nil) {
@@ -51,6 +50,9 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
 }
 
 - (BOOL)_itemExistsAtURL:(NSURL *)fileURL isDirectory:(BOOL *)isDirectory
+#ifndef BUILDING_SPARKLE_TESTS
+SPU_OBJC_DIRECT
+#endif
 {
     NSString *path = fileURL.path;
     if (path == nil) {
@@ -70,7 +72,7 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
 }
 
 // Wrapper around getxattr()
-- (ssize_t)_getXAttr:(const char *)name fromFile:(NSString *)file options:(int)options
+- (ssize_t)_getXAttr:(const char *)name fromFile:(NSString *)file options:(int)options SPU_OBJC_DIRECT
 {
     char path[PATH_MAX] = {0};
     if (![file getFileSystemRepresentation:path maxLength:sizeof(path)]) {
@@ -82,7 +84,7 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
 }
 
 // Wrapper around removexattr()
-- (int)_removeXAttr:(const char *)attr fromFile:(NSString *)file options:(int)options
+- (int)_removeXAttr:(const char *)attr fromFile:(NSString *)file options:(int)options SPU_OBJC_DIRECT
 {
     char path[PATH_MAX] = {0};
     if (![file getFileSystemRepresentation:path maxLength:sizeof(path)]) {
@@ -166,7 +168,7 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
     return [_fileManager copyItemAtURL:sourceURL toURL:destinationURL error:error];
 }
 
-- (BOOL)_getVolumeID:(out id _Nullable __autoreleasing * _Nonnull)outVolumeIdentifier ofItemAtURL:(NSURL *)url
+- (BOOL)_getVolumeID:(out id _Nullable __autoreleasing * _Nonnull)outVolumeIdentifier ofItemAtURL:(NSURL *)url SPU_OBJC_DIRECT
 {
     NSError *error = nil;
     return [url getResourceValue:outVolumeIdentifier forKey:NSURLVolumeIdentifierKey error:&error];
@@ -214,7 +216,7 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
     return [_fileManager moveItemAtURL:sourceURL toURL:destinationURL error:error];
 }
 
-- (BOOL)swapItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL error:(NSError * __autoreleasing *)error __OSX_AVAILABLE(10.13)
+- (BOOL)swapItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL error:(NSError * __autoreleasing *)error
 {
     char originalPath[PATH_MAX] = {0};
     if (![originalItemURL.path getFileSystemRepresentation:originalPath maxLength:sizeof(originalPath)]) {
@@ -243,7 +245,7 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
     return YES;
 }
 
-- (BOOL)_changeOwnerAndGroupOfItemAtURL:(NSURL *)targetURL ownerID:(NSNumber *)ownerID groupID:(NSNumber *)groupID error:(NSError * __autoreleasing *)error
+- (BOOL)changeOwnerAndGroupOfItemAtURL:(NSURL *)targetURL ownerID:(uid_t)ownerID groupID:(gid_t)groupID error:(NSError * __autoreleasing *)error
 {
     char path[PATH_MAX] = {0};
     if (![targetURL.path getFileSystemRepresentation:path maxLength:sizeof(path)]) {
@@ -262,12 +264,12 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
     }
     
     // We use fchown instead of chown because the latter can follow symbolic links
-    BOOL success = (fchown(fileDescriptor, ownerID.unsignedIntValue, groupID.unsignedIntValue) == 0);
+    BOOL success = (fchown(fileDescriptor, ownerID, groupID) == 0);
     close(fileDescriptor);
     
     if (!success) {
         if (error != NULL) {
-            *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to change owner & group for %@ with owner ID %u and group ID %u.", targetURL.path.lastPathComponent, ownerID.unsignedIntValue, groupID.unsignedIntValue] }];
+            *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to change owner & group for %@ with owner ID %u and group ID %u.", targetURL.path.lastPathComponent, ownerID, groupID] }];
         }
     }
 
@@ -341,14 +343,14 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
     // If we can't change both the new owner & group, try to only change the owner
     // If this works, this is sufficient enough for performing the update
     NSNumber *groupIDToUse;
-    if (![self _changeOwnerAndGroupOfItemAtURL:targetURL ownerID:ownerID groupID:groupID error:NULL]) {
+    if (![self changeOwnerAndGroupOfItemAtURL:targetURL ownerID:ownerID.unsignedIntValue groupID:groupID.unsignedIntValue error:NULL]) {
         if ((targetOwnerID != nil && [ownerID isEqualToNumber:targetOwnerID])) {
             // Assume they're the same even if we don't check every file recursively
             // Speeds up the common case like above
             return YES;
         }
         
-        if (![self _changeOwnerAndGroupOfItemAtURL:targetURL ownerID:ownerID groupID:targetGroupID error:error]) {
+        if (![self changeOwnerAndGroupOfItemAtURL:targetURL ownerID:ownerID.unsignedIntValue groupID:targetGroupID.unsignedIntValue error:error]) {
             return NO;
         }
         
@@ -360,7 +362,7 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
     if (isTargetADirectory) {
         NSDirectoryEnumerator *directoryEnumerator = [_fileManager enumeratorAtURL:targetURL includingPropertiesForKeys:nil options:(NSDirectoryEnumerationOptions)0 errorHandler:nil];
         for (NSURL *url in directoryEnumerator) {
-            if (![self _changeOwnerAndGroupOfItemAtURL:url ownerID:ownerID groupID:groupIDToUse error:error]) {
+            if (![self changeOwnerAndGroupOfItemAtURL:url ownerID:ownerID.unsignedIntValue groupID:groupIDToUse.unsignedIntValue error:error]) {
                 return NO;
             }
         }
@@ -369,7 +371,7 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
     return YES;
 }
 
-- (BOOL)_updateItemAtURL:(NSURL *)targetURL withAccessTime:(struct timeval)accessTime error:(NSError * __autoreleasing *)error
+- (BOOL)_updateItemAtURL:(NSURL *)targetURL withAccessTime:(struct timeval)accessTime error:(NSError * __autoreleasing *)error SPU_OBJC_DIRECT
 {
     char path[PATH_MAX] = {0};
 
@@ -570,5 +572,3 @@ static char SUAppleQuarantineIdentifier[] = "com.apple.quarantine";
 }
 
 @end
-
-#pragma clang diagnostic pop

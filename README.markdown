@@ -29,20 +29,13 @@ Please visit [Sparkle's website](http://sparkle-project.org) for up to date docu
 
 ## Requirements
 
-* Runtime: macOS 10.11 or greater
+* Runtime: macOS 10.13 or greater for 2.3, macOS 10.11 or greater for 2.2.x
 * Build: Latest major Xcode (stable or beta, whichever is latest) and one major version less.
 * HTTPS server for serving updates (see [App Transport Security](http://sparkle-project.org/documentation/app-transport-security/))
 
 ## Usage
 
-See [getting started guide](https://sparkle-project.org/documentation/). No code is necessary, but a bit of Xcode configuration is required.
-
-## Development
-
-This repository uses git submodules, and will not build unless you clone recursively. Also, GitHub-provided ZIP/tar archives are broken due to GitHub not supporting git submodules properly.
-
-    git clone https://github.com/sparkle-project/Sparkle
-    git submodule update --init --recursive
+See [getting started guide](https://sparkle-project.org/documentation/). No code is necessary, but a bit of configuration is required.
 
 ### Troubleshooting
 
@@ -59,7 +52,9 @@ If you are adding a symbol to the public API you must decorate the declaration w
 
 ### Building the distribution package
 
-`cd` to the root of the Sparkle source tree and run `make release`. Sparkle-*VERSION*.tar.xz (or .bz2) will be created in a temporary directory and revealed in Finder after the build has completed.
+You do not usually need to build a Sparkle distribution unless you're making changes to Sparkle itself.
+
+To build a Sparkle distribution, `cd` to the root of the Sparkle source tree and run `make release`. Sparkle-*VERSION*.tar.xz (or .bz2) will be created in a temporary directory and revealed in Finder after the build has completed.
 
 Alternatively, build the Distribution scheme in the Xcode UI.
 
