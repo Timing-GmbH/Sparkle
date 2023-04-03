@@ -154,29 +154,14 @@
 
     SUHost *newHost = [[SUHost alloc] initWithBundle:newBundle];
     SUPublicKeys *newPublicKeys = newHost.publicKeys;
-#if SPARKLE_BUILD_LEGACY_DSA_SUPPORT
+    
     BOOL oldHasLegacyDSAKey = publicKeys.dsaPubKeyStatus != SUSigningInputStatusAbsent;
-#endif
     BOOL oldHasEdDSAKey = publicKeys.ed25519PubKeyStatus != SUSigningInputStatusAbsent;
-#if SPARKLE_BUILD_LEGACY_DSA_SUPPORT
     BOOL oldHasAnyDSAKey = oldHasLegacyDSAKey || oldHasEdDSAKey;
-#else
-    BOOL oldHasAnyDSAKey = oldHasEdDSAKey;
-#endif
-#if SPARKLE_BUILD_LEGACY_DSA_SUPPORT
     BOOL newHasLegacyDSAKey = newPublicKeys.dsaPubKeyStatus != SUSigningInputStatusAbsent;
-#endif
     BOOL newHasEdDSAKey = newPublicKeys.ed25519PubKeyStatus != SUSigningInputStatusAbsent;
-#if SPARKLE_BUILD_LEGACY_DSA_SUPPORT
     BOOL newHasAnyDSAKey = newHasLegacyDSAKey || newHasEdDSAKey;
-#else
-    BOOL newHasAnyDSAKey = newHasEdDSAKey;
-#endif
-#if SPARKLE_BUILD_LEGACY_DSA_SUPPORT
     BOOL migratesDSAKeys = oldHasLegacyDSAKey && !oldHasEdDSAKey && newHasEdDSAKey && !newHasLegacyDSAKey;
-#else
-    BOOL migratesDSAKeys = NO;
-#endif
     BOOL updateIsCodeSigned = [SUCodeSigningVerifier bundleAtURLIsCodeSigned:newHost.bundle.bundleURL];
     BOOL hostIsCodeSigned = [SUCodeSigningVerifier bundleAtURLIsCodeSigned:host.bundle.bundleURL];
 
@@ -200,7 +185,7 @@
 
     NSError *codeSignedError = nil;
     if (hostIsCodeSigned) {
-        passedCodeSigning = [SUCodeSigningVerifier codeSignatureAtBundleURL:host.bundle.bundleURL matchesSignatureAtBundleURL:newHost.bundle.bundleURL error:&codeSignedError];
+        passedCodeSigning = [SUCodeSigningVerifier codeSignatureIsValidAtBundleURL:newHost.bundle.bundleURL andMatchesSignatureAtBundleURL:host.bundle.bundleURL error:&codeSignedError];
     }
     // End of security-critical part
 
@@ -216,8 +201,9 @@
         }
     }
 
+    // If the new update is code signed but it's not validly code signed, we reject it
     NSError *innerError = nil;
-    if (passedDSACheck && updateIsCodeSigned && ![SUCodeSigningVerifier codeSignatureIsValidAtBundleURL:newHost.bundle.bundleURL error:&innerError]) {
+    if (passedDSACheck && updateIsCodeSigned && !passedCodeSigning && ![SUCodeSigningVerifier codeSignatureIsValidAtBundleURL:newHost.bundle.bundleURL error:&innerError]) {
         if (error != NULL) {
             *error = [NSError errorWithDomain:SUSparkleErrorDomain code:SUValidationError userInfo:@{ NSLocalizedDescriptionKey: @"The update archive has a valid (Ed)DSA signature, but the app is also signed with Code Signing, which is corrupted. The update will be rejected.", NSUnderlyingErrorKey: innerError }];
         }

@@ -45,11 +45,8 @@ extern NSString *const SUSkippedMajorVersionKey;
 extern NSString *const SUSkippedMajorSubreleaseVersionKey;
 extern NSString *const SUScheduledCheckIntervalKey;
 extern NSString *const SULastCheckTimeKey;
-#if SPARKLE_BUILD_LEGACY_DSA_SUPPORT
-extern NSString *const SUExpectsDSASignatureKey;
 extern NSString *const SUPublicDSAKeyKey;
 extern NSString *const SUPublicDSAKeyFileKey;
-#endif
 extern NSString *const SUPublicEDKeyKey;
 extern NSString *const SUAutomaticallyUpdateKey;
 extern NSString *const SUAllowsAutomaticUpdatesKey;
@@ -84,6 +81,7 @@ extern NSString *const SUAppcastAttributeShortVersionString;
 extern NSString *const SUAppcastAttributeVersion;
 extern NSString *const SUAppcastAttributeOsType;
 extern NSString *const SUAppcastAttributeInstallationType;
+extern NSString *const SUAppcastAttributeFormat;
 
 extern NSString *const SUAppcastElementVersion;
 extern NSString *const SUAppcastElementShortVersionString;
