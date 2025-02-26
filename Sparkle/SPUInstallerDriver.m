@@ -225,10 +225,8 @@
 {
     NSString *pathToRelaunch = _applicationBundle.bundlePath;
     
-#if SPARKLE_BUILD_DMG_SUPPORT || SPARKLE_BUILD_LEGACY_SUUPDATER
     id<SPUUpdaterDelegate> updaterDelegate = _updaterDelegate;
     id updater = _updater;
-#endif
     
 #if SPARKLE_BUILD_LEGACY_SUUPDATER
     // Give the delegate one more chance for determining the path to relaunch via a private API used by SUUpdater
@@ -241,15 +239,13 @@
 #endif
 
     NSString *decryptionPassword = nil;
-#if SPARKLE_BUILD_DMG_SUPPORT
     if (updater != nil && [updaterDelegate respondsToSelector:@selector(decryptionPasswordForUpdater:)]) {
         decryptionPassword = [updaterDelegate decryptionPasswordForUpdater:updater];
     }
-#endif
     
     id<SPUInstallerDriverDelegate> delegate = _delegate;
     
-    SPUInstallationInputData *installationData = [[SPUInstallationInputData alloc] initWithRelaunchPath:pathToRelaunch hostBundlePath:_host.bundlePath updateURLBookmarkData:_updateURLBookmarkData installationType:_updateItem.installationType signatures:_updateItem.signatures decryptionPassword:decryptionPassword];
+    SPUInstallationInputData *installationData = [[SPUInstallationInputData alloc] initWithRelaunchPath:pathToRelaunch hostBundlePath:_host.bundlePath updateURLBookmarkData:_updateURLBookmarkData installationType:_updateItem.installationType signatures:_updateItem.signatures decryptionPassword:decryptionPassword expectedVersion:_updateItem.versionString expectedContentLength:_updateItem.contentLength];
     
     NSData *archivedData = SPUArchiveRootObjectSecurely(installationData);
     if (archivedData == nil) {

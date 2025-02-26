@@ -77,7 +77,7 @@
         if ([_host isRunningTranslocated]) {
             [delegate basicDriverIsRequestingAbortUpdateWithError:[NSError errorWithDomain:SUSparkleErrorDomain code:SURunningTranslocated userInfo:@{ NSLocalizedRecoverySuggestionErrorKey: [NSString stringWithFormat:SULocalizedStringFromTableInBundle(@"Quit %1$@, move it into your Applications folder, relaunch it from there and try again.", SPARKLE_TABLE, sparkleBundle, nil), hostName], NSLocalizedDescriptionKey: [NSString stringWithFormat:SULocalizedStringFromTableInBundle(@"%1$@ can’t be updated if it’s running from the location it was downloaded to.", SPARKLE_TABLE, sparkleBundle, nil), hostName], }]];
         } else {
-            [delegate basicDriverIsRequestingAbortUpdateWithError:[NSError errorWithDomain:SUSparkleErrorDomain code:SURunningFromDiskImageError userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:SULocalizedStringFromTableInBundle(@"%1$@ can’t be updated, because it was opened from a read-only or a temporary location.", SPARKLE_TABLE, sparkleBundle, nil), hostName], NSLocalizedRecoverySuggestionErrorKey: [NSString stringWithFormat:SULocalizedStringFromTableInBundle(@"Use Finder to copy %1$@ to the Applications folder, relaunch it from there, and try again.", SPARKLE_TABLE, sparkleBundle, nil), hostName] }]];
+            [delegate basicDriverIsRequestingAbortUpdateWithError:[NSError errorWithDomain:SUSparkleErrorDomain code:SURunningFromDiskImageError userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:SULocalizedStringFromTableInBundle(@"%1$@ can’t be updated because it was opened from a read-only or a temporary location.", SPARKLE_TABLE, sparkleBundle, nil), hostName], NSLocalizedRecoverySuggestionErrorKey: [NSString stringWithFormat:SULocalizedStringFromTableInBundle(@"Use Finder to copy %1$@ to the Applications folder, relaunch it from there, and try again.", SPARKLE_TABLE, sparkleBundle, nil), hostName] }]];
         }
     } else {
         [_appcastDriver loadAppcastFromURL:appcastURL userAgent:userAgent httpHeaders:httpHeaders inBackground:background];
@@ -230,7 +230,7 @@
             }
         } else {
             // When no updates are found in the appcast
-            // We will need to assume the user is up to date if the feed doen't have any applicable update items
+            // We will need to assume the user is up to date if the feed doesn't have any applicable update items
             // There could be update items on channels the updater is not subscribed to for example. But we can't tell the user about them.
             // There could also only be update items available for other platforms or none at all.
             localizedDescription = SULocalizedStringFromTableInBundle(@"You’re up to date!", SPARKLE_TABLE, sparkleBundle, "Status message shown when the user checks for updates but is already current or the feed doesn't contain any updates.");
