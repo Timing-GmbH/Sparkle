@@ -55,10 +55,13 @@
       <EnvironmentVariables>
          <EnvironmentVariable
             key = "TEST_MODE"
-            value = "DELTA"
+            value = "DELTA_AND_MARKDOWN"
             isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
+      <MetalAPIValidationSettings
+         isEnabled = "No">
+      </MetalAPIValidationSettings>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

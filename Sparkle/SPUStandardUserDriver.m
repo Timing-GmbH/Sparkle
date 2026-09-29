@@ -25,6 +25,9 @@
 #import "SPUStandardVersionDisplay.h"
 #import "SULog.h"
 #import "SPUNoUpdateFoundInfo.h"
+#import "SPUUpdaterSettings.h"
+#import "SPUUpdaterSettings+Debug.h"
+
 #include <time.h>
 #include <mach/mach_time.h>
 #import <IOKit/pwr_mgt/IOPMLib.h>
@@ -37,9 +40,6 @@
 - (void)activate;
 @end
 #endif
-
-// The amount of time the app is allowed to be idle for us to consider showing an update prompt right away when the app is active
-static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 30.0 : 5 * 60.0;
 
 @interface SPUStandardUserDriver () <SPUGentleUserDriverReminders>
 
@@ -65,6 +65,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
     SUStatusController *_checkingController;
     
     SUUpdateAlert *_activeUpdateAlert;
+    SPUUpdaterSettings *_updaterSettings;
     
     SUStatusController *_statusController;
     SUUpdatePermissionPrompt *_permissionPrompt;
@@ -92,6 +93,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
     self = [super init];
     if (self != nil) {
         _host = [[SUHost alloc] initWithBundle:hostBundle];
+        _updaterSettings = [[SPUUpdaterSettings alloc] initWithHostBundle:hostBundle];
         _oldHostName = _host.name;
         _oldHostBundleURL = hostBundle.bundleURL;
         _delegate = delegate;
@@ -110,7 +112,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
 - (double)currentTime SPU_OBJC_DIRECT
 {
     if (_timebaseInfo.denom > 0) {
-        return (1.0 * mach_absolute_time() * _timebaseInfo.numer / _timebaseInfo.denom);
+        return (double)(mach_absolute_time() * _timebaseInfo.numer) / (double)_timebaseInfo.denom;
     } else {
         return 0.0;
     }
@@ -126,11 +128,10 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
 
 - (void)_activateApplication SPU_OBJC_DIRECT
 {
-    if (@available(macOS 14, *)) {
-        [NSApp activate];
-    } else {
-        [NSApp activateIgnoringOtherApps:YES];
-    }
+    // -[NSApp activate] does not always work reliably from backgrounded apps when the user initiates checks for updates
+    // from e.g. a menu bar. The OS should grant active focus to the appliation, but it is inconsistent (last tested on 26.5.1).
+    // For now we will prefer the deprecated more reliant API
+    [NSApp activateIgnoringOtherApps:YES];
 }
 
 - (void)showUpdatePermissionRequest:(SPUUpdatePermissionRequest *)request reply:(void (^)(SUUpdatePermissionResponse *))reply
@@ -218,7 +219,9 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
                 if (!appNearUpdaterInitialization && !backgroundApp) {
                     timeSinceLastEvent = CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateHIDSystemState, kCGAnyInputEventType);
                     
-                    if (timeSinceLastEvent >= SUScheduledUpdateIdleEventLeewayInterval) {
+                    NSTimeInterval scheduledUpdateIdleEventLeewayInterval = _updaterSettings.standardUIScheduledUpdateIdleEventLeewayInterval;
+                    
+                    if (timeSinceLastEvent >= scheduledUpdateIdleEventLeewayInterval) {
                         // Make sure there's no active power management assertions preventing
                         // the display from sleeping by the current application.
                         // If there is, then the app may still actively be in use
@@ -367,7 +370,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
     
     __weak __typeof__(self) weakSelf = self;
     __weak id<SPUStandardUserDriverDelegate> weakDelegate = delegate;
-    _activeUpdateAlert = [[SUUpdateAlert alloc] initWithAppcastItem:appcastItem state:state host:_host versionDisplayer:versionDisplayer completionBlock:^(SPUUserUpdateChoice choice, NSRect windowFrame, BOOL wasKeyWindow) {
+    _activeUpdateAlert = [[SUUpdateAlert alloc] initWithAppcastItem:appcastItem state:state host:_host versionDisplayer:versionDisplayer updaterSettings:_updaterSettings delegate:delegate completionBlock:^(SPUUserUpdateChoice choice, NSRect windowFrame, BOOL wasKeyWindow) {
         reply(choice);
         
         __typeof__(self) strongSelf = weakSelf;
@@ -457,7 +460,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
     // I don't want to expose SULog here because it's more of a user driver facing error
     // For our purposes we just ignore it and continue on..
     NSLog(@"Failed to download release notes with error: %@", error);
-    [_activeUpdateAlert showReleaseNotesFailedToDownload];
+    [_activeUpdateAlert showReleaseNotesFailedToDownloadWithError:error];
 }
 
 - (void)showUpdateInFocus
@@ -543,7 +546,6 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
 #endif
     
     _checkingController = [[SUStatusController alloc] initWithHost:_host windowTitle:SULocalizedStringFromTableInBundle(@"Software Update", SPARKLE_TABLE, sparkleBundle, nil) centerPointValue:nil minimizable:NO closable:NO];
-    [[_checkingController window] center]; // Force the checking controller to load its window.
     [_checkingController beginActionWithTitle:SULocalizedStringFromTableInBundle(@"Checking for updates…", SPARKLE_TABLE, sparkleBundle, nil) maxProgressValue:0.0 statusText:nil];
     [_checkingController setButtonTitle:SULocalizedStringFromTableInBundle(@"Cancel", SPARKLE_TABLE, sparkleBundle, nil) target:self action:@selector(cancelCheckForUpdates:) isDefault:NO accessibilityIdentifier:@"SUStatusCancel"];
     
@@ -605,7 +607,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
         alert.informativeText = error.localizedDescription;
     }
     
-    [alert addButtonWithTitle:SULocalizedStringFromTableInBundle(@"Cancel Update", SPARKLE_TABLE, sparkleBundle, nil)];
+    [alert addButtonWithTitle:SULocalizedStringFromTableInBundle(@"Cancel Update", SPARKLE_TABLE, sparkleBundle, @"Run generate_progress_tool_localizations.py after updating.")];
     [self showAlert:alert secondaryAction:nil];
     
     acknowledgement();
@@ -695,6 +697,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
             }
             case SPUNoUpdateFoundReasonSystemIsTooOld:
             case SPUNoUpdateFoundReasonSystemIsTooNew:
+            case SPUNoUpdateFoundReasonHardwareDoesNotSupportARM64:
                 if (latestAppcastItem.infoURL != nil) {
                     // Show the user the product's link if available
                     [alert addButtonWithTitle:SULocalizedStringFromTableInBundle(@"Learn More…", SPARKLE_TABLE, sparkleBundle, nil)];
@@ -761,7 +764,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
             centerPointValue = nil;
         }
         
-        _statusController = [[SUStatusController alloc] initWithHost:_host windowTitle:[NSString stringWithFormat:SULocalizedStringFromTableInBundle(@"Updating %@", SPARKLE_TABLE, SUSparkleBundle(), nil), _host.name] centerPointValue:centerPointValue minimizable:minimizable closable:closable];
+        _statusController = [[SUStatusController alloc] initWithHost:_host windowTitle:[NSString stringWithFormat:SULocalizedStringFromTableInBundle(@"Updating %@", SPARKLE_TABLE, SUSparkleBundle(), @"Run generate_progress_tool_localizations.py after updating."), _host.name] centerPointValue:centerPointValue minimizable:minimizable closable:closable];
         
         if (_updateAlertWindowWasInactive) {
             [_statusController.window orderFront:nil];
@@ -821,7 +824,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
     NSBundle *sparkleBundle = SUSparkleBundle();
 #endif
 
-    if (_expectedContentLength > 0.0) {
+    if (_expectedContentLength > 0) {
         double newProgressValue = (double)_bytesDownloaded / (double)_expectedContentLength;
         
         [_statusController setProgressValue:MIN(newProgressValue, 1.0)];
@@ -862,7 +865,7 @@ static const NSTimeInterval SUScheduledUpdateIdleEventLeewayInterval = DEBUG ? 3
     
     if (applicationTerminated) {
         // Note this will only show up if -showReadyToInstallAndRelaunch: was called beforehand
-        [_statusController beginActionWithTitle:SULocalizedStringFromTableInBundle(@"Installing update…", SPARKLE_TABLE, SUSparkleBundle(), @"Take care not to overflow the status window.") maxProgressValue:0.0 statusText:nil];
+        [_statusController beginActionWithTitle:SULocalizedStringFromTableInBundle(@"Installing update…", SPARKLE_TABLE, SUSparkleBundle(), @"Run generate_progress_tool_localizations.py after updating.") maxProgressValue:0.0 statusText:nil];
         [_statusController setButtonEnabled:NO];
     } else {
         // The "quit" event can always be canceled or delayed by the application we're updating

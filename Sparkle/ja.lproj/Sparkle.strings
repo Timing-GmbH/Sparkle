@@ -85,7 +85,7 @@
 /* No comment provided by engineer. */
 "Cancel" = "キャンセル";
 
-/* No comment provided by engineer. */
+/* Run generate_progress_tool_localizations.py after updating. */
 "Cancel Update" = "アップデートを中止";
 
 /* No comment provided by engineer. */
@@ -118,7 +118,7 @@
 /* Alternate title for 'Remind Me Later' button when downloaded updates can be resumed */
 "Install on Quit" = "終了時にインストール";
 
-/* Take care not to overflow the status window. */
+/* Run generate_progress_tool_localizations.py after updating. */
 "Installing update…" = "アップデートをインストールしています…";
 
 /* Alternate title for 'Install Update' button when there's no download in RSS feed. */
@@ -158,9 +158,6 @@
 "The installation failed due to not having permission to write the new update." = "新しいアップデートを書き込むアクセス権がないためインストールできませんでした。";
 
 /* No comment provided by engineer. */
-"The update checker failed to start correctly. You should contact the app developer to report this issue and verify that you have the latest version." = "アップデートチェッカーが正しくスタートできませんでした。アプリケーション開発者に連絡をしてこの不具合を報告し、最新バージョンであることを確認してください。";
-
-/* No comment provided by engineer. */
 "The update is improperly signed and could not be validated. Please try again later or contact the app developer." = "アップデートの署名が不適切で認証できませんでした。あとでやり直すかアプリケーション開発者に連絡してください。";
 
 /* No comment provided by engineer. */
@@ -172,7 +169,7 @@
 /* No comment provided by engineer. */
 "Update Installed" = "アップデートがインストールされました";
 
-/* No comment provided by engineer. */
+/* Run generate_progress_tool_localizations.py after updating. */
 "Updating %@" = "%@をアップデート中";
 
 /* No comment provided by engineer. */

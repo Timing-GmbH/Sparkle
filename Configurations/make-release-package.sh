@@ -16,7 +16,6 @@ function verify_code_signatures() {
     find "${verification_directory}" -name "Sparkle.framework" -type d -exec codesign --verify -vvv --deep {} \;
     
     if [ "$check_aux_apps" = true ] ; then
-        codesign --verify -vvv --deep "${verification_directory}/sparkle.app"
         codesign --verify -vvv --deep "${verification_directory}/Sparkle Test App.app"
     fi
     codesign --verify -vvv --deep "${verification_directory}/bin/BinaryDelta"
@@ -42,7 +41,6 @@ if [ "$ACTION" = "" ] ; then
     cp "$CONFIGURATION_BUILD_DIR/generate_keys" "$CONFIGURATION_BUILD_DIR/staging/bin"
     cp "$CONFIGURATION_BUILD_DIR/sign_update" "$CONFIGURATION_BUILD_DIR/staging/bin"
     cp -R "$CONFIGURATION_BUILD_DIR/Sparkle Test App.app" "$CONFIGURATION_BUILD_DIR/staging"
-    cp -R "$CONFIGURATION_BUILD_DIR/sparkle.app" "$CONFIGURATION_BUILD_DIR/staging"
     cp -R "$CONFIGURATION_BUILD_DIR/Sparkle.framework" "$CONFIGURATION_BUILD_DIR/staging"
     cp -R "$CONFIGURATION_BUILD_DIR/Sparkle.xcframework" "$CONFIGURATION_BUILD_DIR/staging-spm"
 
@@ -60,8 +58,6 @@ if [ "$ACTION" = "" ] ; then
         cp -R "$CONFIGURATION_BUILD_DIR/sign_update.dSYM" "$CONFIGURATION_BUILD_DIR/staging/Symbols"
         
         cp -R "$CONFIGURATION_BUILD_DIR/Sparkle Test App.app.dSYM" "$CONFIGURATION_BUILD_DIR/staging/Symbols"
-        
-        cp -R "$CONFIGURATION_BUILD_DIR/sparkle.app.dSYM" "$CONFIGURATION_BUILD_DIR/staging/Symbols"
         
         cp -R "$CONFIGURATION_BUILD_DIR/Sparkle.framework.dSYM" "$CONFIGURATION_BUILD_DIR/staging/Symbols"
         
@@ -126,10 +122,9 @@ if [ "$ACTION" = "" ] ; then
             exit 1
         fi
         
-            # Generate new Package manifest, podspec, and carthage files
+            # Generate new Package manifest and carthage files
         cd "$CONFIGURATION_BUILD_DIR"
         cp "$PROJECT_DIR/Package.swift" "$CONFIGURATION_BUILD_DIR"
-        cp "$PROJECT_DIR/Sparkle.podspec" "$CONFIGURATION_BUILD_DIR"
         cp "$PROJECT_DIR/Carthage-dev.json" "$CONFIGURATION_BUILD_DIR"
     fi
     
@@ -145,14 +140,11 @@ if [ "$ACTION" = "" ] ; then
         echo "Version: $MARKETING_VERSION"
         echo "Tag: $latest_git_tag"
         echo "Checksum: $spm_checksum"
-
-        sed -E -i '' -e "/s\.version.+=/ s/\".+\"/\"$MARKETING_VERSION\"/" "Sparkle.podspec"
         
         "$PROJECT_DIR/Configurations/update-carthage.py" "Carthage-dev.json" "$MARKETING_VERSION"
-        cp "Sparkle.podspec" "$PROJECT_DIR"
         # Note the Carthage-dev.json file will finally be copied to the website repo in Carthage/Sparkle.json in the end
         cp "Carthage-dev.json" "$PROJECT_DIR"
-        echo "Sparkle.podspec and Carthage-dev.json updated with following values:"
+        echo "Carthage-dev.json is updated with following values:"
         echo "Version: $MARKETING_VERSION"
     else
         echo "warning: Xcode version $XCODE_VERSION_ACTUAL does not support computing checksums for Swift Packages. Please update the Package manifest manually."

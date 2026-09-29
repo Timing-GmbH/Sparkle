@@ -135,13 +135,14 @@ int bspatch(int argc,const char * const argv[])
     ssize_t oldsize = 0,newsize = 0;
     ssize_t bzctrllen = 0,bzdatalen = 0;
     u_char header[32] = {0},buf[8] = {0};
-    u_char *old = NULL, *new = NULL;
+    u_char *old = NULL, *newp = NULL;
     off_t oldpos = 0,newpos = 0;
     off_t ctrl[3] = {0};
     off_t lenread = 0;
     off_t i = 0;
     io_funcs_t * io = NULL;
     int exitstatus = -1;
+    off_t size = 0;
 
     if(argc!=4) {
         warnx("usage: %s oldfile newfile patchfile\n",argv[0]);
@@ -247,7 +248,7 @@ int bspatch(int argc,const char * const argv[])
         warn("estream open");
         goto cleanup;
     }
-    off_t size = 0;
+    
     old = readfile(argv[1], &size);
     if (old == NULL) {
         warn("old file: %s", argv[1]);
@@ -256,7 +257,7 @@ int bspatch(int argc,const char * const argv[])
     
     oldsize = size;
     
-    if((new=malloc((size_t)newsize+1))==NULL) {
+    if((newp=(u_char *)malloc((size_t)newsize+1))==NULL) {
         warn("Failed to allocate memory for new");
         goto cleanup;
     }
@@ -271,7 +272,7 @@ int bspatch(int argc,const char * const argv[])
                 goto cleanup;
             }
             ctrl[i]=offtin(buf);
-        };
+        }
 
         /* Sanity-check */
         if(newpos+ctrl[0]>newsize) {
@@ -280,7 +281,7 @@ int bspatch(int argc,const char * const argv[])
         }
 
         /* Read diff string */
-        lenread = io->read(dstream, new + newpos, ctrl[0]);
+        lenread = io->read(dstream, newp + newpos, ctrl[0]);
         if (lenread < 0 || lenread < ctrl[0]) {
             warnx("Corrupt patch\n");
             goto cleanup;
@@ -289,7 +290,7 @@ int bspatch(int argc,const char * const argv[])
         /* Add old data to diff string */
         for(i=0;i<ctrl[0];i++)
             if((oldpos+i>=0) && (oldpos+i<oldsize))
-                new[newpos+i]+=old[oldpos+i];
+                newp[newpos+i]+=old[oldpos+i];
 
         /* Adjust pointers */
         newpos+=ctrl[0];
@@ -302,7 +303,7 @@ int bspatch(int argc,const char * const argv[])
         }
 
         /* Read extra string */
-        lenread = io->read(estream, new + newpos, ctrl[1]);
+        lenread = io->read(estream, newp + newpos, ctrl[1]);
         if (lenread < 0 || lenread < ctrl[1]) {
             warnx("Corrupt patch\n");
             goto cleanup;
@@ -311,7 +312,7 @@ int bspatch(int argc,const char * const argv[])
         /* Adjust pointers */
         newpos+=ctrl[1];
         oldpos+=ctrl[2];
-    };
+    }
 
     /* Clean up the bzip2 reads */
     io->close(cstream);
@@ -342,14 +343,22 @@ int bspatch(int argc,const char * const argv[])
     }
     epf = NULL;
 
-    /* Write the new file */
-    f = fopen(argv[2], "w");
-    if (f == NULL) {
-        warn("failed to write new file: %s", argv[2]);
-        goto cleanup;
+    /* Write the new file without following symlinks at the destination path */
+    {
+        int newfd = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+        if (newfd < 0) {
+            warn("failed to open new file: %s", argv[2]);
+            goto cleanup;
+        }
+        f = fdopen(newfd, "w");
+        if (f == NULL) {
+            warn("failed to write new file: %s", argv[2]);
+            close(newfd);
+            goto cleanup;
+        }
     }
     
-    if (fwrite(new, 1, (size_t)newsize, f) < (size_t)newsize) {
+    if (fwrite(newp, 1, (size_t)newsize, f) < (size_t)newsize) {
         warn("failed to write to new file: %s", argv[2]);
         goto cleanup;
     }
@@ -363,7 +372,7 @@ int bspatch(int argc,const char * const argv[])
     
     exitstatus = 0;
 cleanup:
-    free(new);
+    free(newp);
     free(old);
     
     if (f != NULL) {

@@ -1,3 +1,83 @@
+# 2.10.0
+
+* Bump minimum deployment target to macOS 12.0 (#2883, #2892) (Zorg, F1248)
+* Don't copy updater progress tool app outside of its bundle (#2900) (Zorg)
+* Fix updating not working the first time if bundle ID ends with ".service" or other irregular bundle-like extensions (#2909) (Zorg, youngjunning)
+* Fix using appcast length fallback if server reports no content size (resulting in indeterminate progress) (#2922) (Zorg)
+* Fix reading release notes content length from appcast for signed feed diagnostics (#2921) (Leo Camus)
+* Update European Portuguese localization (#2912) (Andrei)
+* Fix temporary file leaks when applying binary delta file fails (#2906) (Zorg)
+* Optimize and move updating mdimporter bundles to BinaryDelta applying code (#2905) (Zorg)
+* Fix re-applying file system compression for delta updates on macOS 27 (#2904) (Zorg)
+* Remove CocoaPods support (#2899) (Zorg)
+
+macOS 12.0 or later is now required (due to Xcode 27 dropping support for deploying to older OS versions). CocoaPods support is also now dropped.
+
+If you're not generating appcasts automatically, remember to add `<sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>` element to `<item>`s in your appcast.
+
+# 2.9.6
+
+* Harden safety of installer moving the download archive (#2898) (Zorg, Joshua Rogers)
+* Don't copy progress tool for root user (#2897) (Zorg, Joshua Rogers)
+* Reject package based installs when signing validation failed (#2895) (Zorg)
+
+# 2.9.5
+
+* Harden patching delta file against symbolic link at destination path (#2891) (Zorg, Arpit Jain)
+
+# 2.9.4
+
+* Fix backgrounded apps sometimes not bringing windows from user initiated actions in active focus (#2890) (Zorg, wojciech-kulik)
+
+# 2.9.3
+
+* Fix updating not working the first time if the app's bundle ID ends with ".app" (#2882) (Zorg)
+
+# 2.9.2
+
+* Show hidden window title in update window for accessibility (#2871) (Zorg)
+* Polish and update Spanish translations to be gender neutral (#2874, #2875) (Emilio P Egido)
+* Guard against NULL CFRelease() on failure condition in fallback path (#2867) (Zorg)
+* Guard against symlinks when applying delta update files (fe7b718) (Zorg, fg0x0)
+* Enforce connection to installer to be validated before receiving appcast item data (#2876, #2877) (Zorg, fg0x0)
+
+# 2.9.1
+
+* Fix potential crash due to race condition within clearDownloadedUpdate (#2863) (Julian Pscheid)
+* Fix generate_appcast failing if feed URL doesn't have lastPathComponent (#2862) (Julian Pscheid)
+* Don't let progress status text title string line wrap (#2856) (Zorg)
+* Add minimal framework support for building arm64e (#2858, #2860) (Zorg)
+* Add SKIP_INSTALL=YES to for XPCServices targets (#2864) (Jeremy Huddleston Sequoia)
+
+# 2.9.0
+
+* Add basic markdown support for release notes (requires macOS 12+) including [customizing its presentation](https://sparkle-project.org/documentation/publishing#adapting-markdown-or-plain-text-release-notes) (#2810, #2817) (Zorg)
+* Add support for [signing and verifying appcast feeds](https://sparkle-project.org/documentation#signing-feeds-optional) (#2822, #2828) (Zorg)
+* Add [sparkle:hardwareRequirements](https://sparkle-project.org/documentation/publishing#minimum-system-version-requirements) for enforcing an Apple silicon (arm64) requirement (#2797) (Zorg)
+* Add [sparkle:minimumUpdateVersion](https://sparkle-project.org/documentation/publishing/#upgrading-to-newer-features) for specifying a minimum version an app needs to be on before upgrading (#2811) (Zorg)
+* Add API annotations for Swift concurrency (#2827) (Zorg)
+* Validate Obj-C class when reading objects from user defaults / Info plists (#2782) (Zorg)
+* Download temporary files in-memory using NSURLSessionDataTask (#2825) (Zorg)
+* Allow [impatient update check interval](https://sparkle-project.org/documentation/customization/) to be configured for updates that are downloaded automatically (#2799) (Zorg)
+* Probe agent & status service as soon as we launch it to reduce timeout issues (#2852) (Zorg)
+* Add `allowsAutomaticUpdates` property to determine if automatic downloading/installing of updates option should be enabled (#2809) (Zorg)
+* Add Vietnamese translation (#2816, #2839) (TranPhuong319)
+* Add missing nn language to Installer progress Info.plist (#2818) (Zorg)
+* Improve German localization (#2847) (Marco Hillger)
+* Find non-canonical Sparkle.framework locations in generate_appcast when creating delta updates to determine compatibility (#2833) (Zorg)
+* Make Debug builds of Sparkle use same time interval settings as Release (#2805) (Zorg)
+* Remove sparkle-cli from the binary distribution (#2826) (Zorg)
+* Make generate_appcast deltas order stable and thread-safe (#2848) (Nathan Manceaux-Panot)
+* Fix Xcode 26.4 beta compiler warnings (#2850) (Zorg)
+
+# 2.8.1
+
+* Enforce RunAtLoad to reduce potential timeout issue when launching updater task (#2795) (Zorg)
+* Add missing executable bit permission warnings on connection failure (#2792) (Zorg)
+* Add missing localizations to zh-CN & zh-TW (#2789, #2791) (Francis Feng)
+* Add documentation note for delegates being weakly referenced (#2802) (Zorg)
+* Include app name in startUpdater: failure in SPUStandardUpdaterController (#2780) (Zorg)
+
 # 2.8.0
 
 * UI modernization and macOS Tahoe support

@@ -11,7 +11,6 @@
 #import "SPUMessageTypes.h"
 #import "SULog.h"
 #import "SULog+NSError.h"
-#import "SUApplicationInfo.h"
 #import "SPUInstallerAgentProtocol.h"
 #import "SUInstallerAgentInitiationProtocol.h"
 #import "StatusInfo.h"
@@ -102,7 +101,7 @@ static const NSTimeInterval SUTerminationTimeDelay = 0.3;
         // This difference is significant. We shouldn't have a model where the 'server' tries to connect to a 'client',
         // nor have a model where a process that runs at the highest level (the installer can run as root) tries to connect to a user level agent or process
         BOOL systemDomain = arguments[2].boolValue;
-        NSXPCConnectionOptions connectionOptions = systemDomain ? NSXPCConnectionPrivileged : 0;
+        NSXPCConnectionOptions connectionOptions = systemDomain ? NSXPCConnectionPrivileged : (NSXPCConnectionOptions)0;
         
         _systemDomain = systemDomain;
         _connection = [[NSXPCConnection alloc] initWithMachServiceName:SPUProgressAgentServiceNameForBundleIdentifier(hostBundleIdentifier) options:connectionOptions];
@@ -113,8 +112,6 @@ static const NSTimeInterval SUTerminationTimeDelay = 0.3;
         
         _application = application;
         _delegate = delegate;
-        
-        [delegate loadLocalizationStringsFromHost:host];
         
         _connection.exportedInterface = [NSXPCInterface interfaceWithProtocol:@protocol(SPUInstallerAgentProtocol)];
         _connection.exportedObject = self;
@@ -192,26 +189,7 @@ static const NSTimeInterval SUTerminationTimeDelay = 0.3;
     
     [_statusInfo invalidate];
     [_connection invalidate];
-    
-    // Remove the agent bundle; it is assumed this bundle is in a temporary/cache/support directory
-    NSError *theError = nil;
-    NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
-    
-    if (![[NSFileManager defaultManager] removeItemAtPath:bundlePath error:&theError]) {
-        SULog(SULogLevelError, @"Couldn't remove agent bundle: %@.", theError);
-    } else {
-        // There should be nothing else in the parent temporary directory given to us,
-        // so let us try to remove it. Note rmdir() will fail if there are unexpectably other
-        // items present
-        NSString *parentDirectory = bundlePath.stringByDeletingLastPathComponent;
-        const char *fileSystemRepresentation = parentDirectory.fileSystemRepresentation;
-        if (fileSystemRepresentation != NULL) {
-            if (rmdir(fileSystemRepresentation) != 0) {
-                SULog(SULogLevelError, @"Failed to remove parent agent bundle directory: %@: %d", parentDirectory, errno);
-            }
-        }
-    }
-    
+
     exit(status);
 }
 
@@ -231,7 +209,7 @@ static const NSTimeInterval SUTerminationTimeDelay = 0.3;
         NSMutableArray<NSRunningApplication *> *potentialMatchingTranslocatedRunningApplications = [[NSMutableArray alloc] init];
         
         BOOL needsToHandleImproperBundles;
-        if (@available(macOS 16, *)) {
+        if (@available(macOS 26, *)) {
             needsToHandleImproperBundles = NO;
         } else {
             needsToHandleImproperBundles = YES;
@@ -443,19 +421,9 @@ static const NSTimeInterval SUTerminationTimeDelay = 0.3;
 {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!self->_willTerminate) {
-            // Show app icon in the dock
-            ProcessSerialNumber psn = { 0, kCurrentProcess };
-            TransformProcessType(&psn, kProcessTransformToForegroundApplication);
-            
-            // Note: the application icon needs to be set after showing the icon in the dock
-            self->_application.applicationIconImage = [SUApplicationInfo bestIconForHost:self->_oldHost];
-            
             // Activate ourselves otherwise we will probably be in the background
-            if (@available(macOS 14, *)) {
-                [self->_application activate];
-            } else {
-                [self->_application activateIgnoringOtherApps:YES];
-            }
+            // See comments in -[SPUStandardUserDriver _activateApplication] for why -activate is not used
+            [self->_application activateIgnoringOtherApps:YES];
             
             [self->_delegate installerProgressShouldDisplayWithHost:self->_oldHost];
         }

@@ -22,6 +22,22 @@ typedef void (^SUDeltaHandler)(NSFileManager *fileManager, NSString *sourceDirec
 
 @implementation SUBinaryDeltaTest
 
+static NSString *temporaryDirectory(NSString *base)
+{
+    NSString *template = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.XXXXXXXXXX", base]];
+    NSMutableData *data = [NSMutableData data];
+    [data appendBytes:template.fileSystemRepresentation length:strlen(template.fileSystemRepresentation) + 1];
+
+    char *buffer = (char *)data.mutableBytes;
+    char *templateResult = mkdtemp(buffer);
+    if (templateResult == NULL) {
+        perror("mkdtemp");
+        return nil;
+    }
+
+    return stringWithFileSystemRepresentation(templateResult);
+}
+
 - (void)testTemporaryDirectory
 {
     NSString *tmp1 = temporaryDirectory(@"Sparklęエンジン");
@@ -388,7 +404,7 @@ typedef void (^SUDeltaHandler)(NSFileManager *fileManager, NSString *sourceDirec
 - (NSData *)bigData1
 {
     const size_t bufferSize = 4096*32;
-    uint8_t *buffer = calloc(1, bufferSize);
+    uint8_t *buffer = (uint8_t *)calloc(1, bufferSize);
     XCTAssertTrue(buffer != NULL);
     
     return [NSData dataWithBytesNoCopy:buffer length:bufferSize];
@@ -397,7 +413,7 @@ typedef void (^SUDeltaHandler)(NSFileManager *fileManager, NSString *sourceDirec
 - (NSData *)bigData2
 {
     const size_t bufferSize = 4096*32;
-    uint8_t *buffer = calloc(1, bufferSize);
+    uint8_t *buffer = (uint8_t *)calloc(1, bufferSize);
     XCTAssertTrue(buffer != NULL);
     
     for (size_t bufferIndex = 0; bufferIndex < bufferSize; ++bufferIndex) {
@@ -1377,7 +1393,7 @@ typedef void (^SUDeltaHandler)(NSFileManager *fileManager, NSString *sourceDirec
         NSTask *dittoTask = [[NSTask alloc] init];
         dittoTask.executableURL = [NSURL fileURLWithPath:@"/usr/bin/ditto" isDirectory:NO];
         
-        dittoTask.arguments = @[@"--hfsCompression", destinationFile, destinationFile2];
+        dittoTask.arguments = @[@"--hfsCompression", @"--noclone", destinationFile, destinationFile2];
         
         NSError *launchError = nil;
         BOOL launched = [dittoTask launchAndReturnError:&launchError];
@@ -2172,7 +2188,7 @@ typedef void (^SUDeltaHandler)(NSFileManager *fileManager, NSString *sourceDirec
         NSImage *iconImage = [NSImage imageNamed:NSImageNameAdvanced];
         XCTAssertNotNil(iconImage);
         
-        BOOL setIcon = [[NSWorkspace sharedWorkspace] setIcon:iconImage forFile:sourceDirectory options:0];
+        BOOL setIcon = [[NSWorkspace sharedWorkspace] setIcon:iconImage forFile:sourceDirectory options:(NSWorkspaceIconCreationOptions)0];
         XCTAssertTrue(setIcon);
     } afterDiffHandler:nil afterPatchHandler:nil];
     XCTAssertFalse(success);
@@ -2190,7 +2206,7 @@ typedef void (^SUDeltaHandler)(NSFileManager *fileManager, NSString *sourceDirec
         NSImage *iconImage = [NSImage imageNamed:NSImageNameAdvanced];
         XCTAssertNotNil(iconImage);
         
-        BOOL setIcon = [[NSWorkspace sharedWorkspace] setIcon:iconImage forFile:destinationDirectory options:0];
+        BOOL setIcon = [[NSWorkspace sharedWorkspace] setIcon:iconImage forFile:destinationDirectory options:(NSWorkspaceIconCreationOptions)0];
         XCTAssertTrue(setIcon);
     } afterDiffHandler:nil afterPatchHandler:nil];
     XCTAssertFalse(success);
@@ -2208,7 +2224,7 @@ typedef void (^SUDeltaHandler)(NSFileManager *fileManager, NSString *sourceDirec
         NSImage *iconImage = [NSImage imageNamed:NSImageNameAdvanced];
         XCTAssertNotNil(iconImage);
         
-        BOOL setIcon = [[NSWorkspace sharedWorkspace] setIcon:iconImage forFile:sourceDirectory options:0];
+        BOOL setIcon = [[NSWorkspace sharedWorkspace] setIcon:iconImage forFile:sourceDirectory options:(NSWorkspaceIconCreationOptions)0];
         XCTAssertTrue(setIcon);
     } afterPatchHandler:nil];
     XCTAssertTrue(success);
@@ -2342,6 +2358,34 @@ typedef void (^SUDeltaHandler)(NSFileManager *fileManager, NSString *sourceDirec
         
         XCTAssertEqualObjects(destinationDate, fileCreationDate);
     } testingVersion3Delta:NO testingVersion2Delta:NO];
+    XCTAssertTrue(success);
+}
+
+- (void)testSpotlightImporterModificationDate
+{
+    NSString *importerRelativePath = @"Contents/Library/Spotlight/Foo.mdimporter";
+
+    __block NSDate *modificationDateBeforePatch = nil;
+
+    BOOL success = [self createAndApplyPatchWithBeforeDiffHandler:^(NSFileManager *fileManager, NSString *sourceDirectory, NSString *destinationDirectory) {
+        NSString *sourceImporterPath = [sourceDirectory stringByAppendingPathComponent:importerRelativePath];
+        NSString *destinationImporterPath = [destinationDirectory stringByAppendingPathComponent:importerRelativePath];
+
+        XCTAssertTrue([fileManager createDirectoryAtPath:sourceImporterPath withIntermediateDirectories:YES attributes:nil error:nil]);
+        XCTAssertTrue([fileManager createDirectoryAtPath:destinationImporterPath withIntermediateDirectories:YES attributes:nil error:nil]);
+
+        modificationDateBeforePatch = [fileManager attributesOfItemAtPath:sourceImporterPath error:nil][NSFileModificationDate];
+        XCTAssertNotNil(modificationDateBeforePatch);
+
+        sleep(1); // wait for clock to advance
+    } afterDiffHandler:nil afterPatchHandler:^(NSFileManager *fileManager, NSString * __unused sourceDirectory, NSString *destinationDirectory) {
+        NSString *patchedImporterPath = [destinationDirectory stringByAppendingPathComponent:importerRelativePath];
+
+        NSDate *modificationDateAfterPatch = [fileManager attributesOfItemAtPath:patchedImporterPath error:nil][NSFileModificationDate];
+        XCTAssertNotNil(modificationDateAfterPatch);
+
+        XCTAssertGreaterThan([modificationDateAfterPatch timeIntervalSinceDate:modificationDateBeforePatch], 0);
+    }];
     XCTAssertTrue(success);
 }
 

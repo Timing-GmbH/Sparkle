@@ -76,7 +76,7 @@
 /* No comment provided by engineer. */
 "Cancel" = "Cancelar";
 
-/* No comment provided by engineer. */
+/* Run generate_progress_tool_localizations.py after updating. */
 "Cancel Update" = "Cancelar Atualização";
 
 /* No comment provided by engineer. */
@@ -97,7 +97,7 @@
 /* Alternate title for 'Remind Me Later' button when downloaded updates can be resumed */
 "Install on Quit" = "Instalar ao Encerrar";
 
-/* Take care not to overflow the status window. */
+/* Run generate_progress_tool_localizations.py after updating. */
 "Installing update…" = "Instalando atualização…";
 
 /* Alternate title for 'Install Update' button when there's no download in RSS feed. */
@@ -116,9 +116,6 @@
 "Should %1$@ automatically check for updates? You can always check for updates manually from the %1$@ menu." = "Deseja que o app %1$@ busque atualizações automaticamente? Você também pode buscar atualizações manualmente no menu %1$@.";
 
 /* No comment provided by engineer. */
-"The update checker failed to start correctly. You should contact the app developer to report this issue and verify that you have the latest version." = "Houve uma falha ao iniciar a busca de atualizações. Contate o desenvolvedor do app para comunicar esse problema e verifique se você tem a versão mais recente.";
-
-/* No comment provided by engineer. */
 "The update is improperly signed and could not be validated. Please try again later or contact the app developer." = "A atualização foi assinada incorretamente e não pôde ser validada. Tente novamente mais tarde ou contate o desenvolvedor do app.";
 
 /* No comment provided by engineer. */
@@ -130,7 +127,7 @@
 /* No comment provided by engineer. */
 "Update Installed" = "Atualização Instalada";
 
-/* No comment provided by engineer. */
+/* Run generate_progress_tool_localizations.py after updating. */
 "Updating %@" = "Atualizando o app %@";
 
 /* No comment provided by engineer. */

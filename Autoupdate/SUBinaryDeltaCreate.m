@@ -81,6 +81,8 @@ extern int bsdiff(int argc, const char **argv);
     int result = bsdiff(4, argv);
     if (result == 0) {
         _resultPath = temporaryFile;
+    } else {
+        unlink(temporaryFile.fileSystemRepresentation);
     }
 }
 
@@ -133,7 +135,7 @@ static bool codeSignatureExtendedAttributeExists(const FTSENT *ent)
         return false;
     }
 
-    char *buffer = malloc((size_t)listSize);
+    char *buffer = (char *)malloc((size_t)listSize);
     assert(buffer != NULL);
 
     ssize_t sizeBack = listxattr(ent->fts_path, buffer, (size_t)listSize, options);

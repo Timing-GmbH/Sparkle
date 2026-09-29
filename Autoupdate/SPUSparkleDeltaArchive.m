@@ -178,7 +178,7 @@ typedef struct
             FILE *file = _file;
             void *compressionBuffer = _compressionBuffer;
             
-            _compressionStream.dst_ptr = buffer;
+            _compressionStream.dst_ptr = (uint8_t *)buffer;
             _compressionStream.dst_size = (size_t)length;
             
             while (_compressionStream.dst_size > 0) {
@@ -194,7 +194,7 @@ typedef struct
                     }
                     
                     // Reset source buffer
-                    _compressionStream.src_ptr = compressionBuffer;
+                    _compressionStream.src_ptr = (const uint8_t *)compressionBuffer;
                     _compressionStream.src_size = bytesRead;
                 }
                 
@@ -264,7 +264,7 @@ static compression_algorithm compressionAlgorithmForMode(SPUDeltaCompressionMode
         return nil;
     }
     
-    SPUDeltaCompressionMode compression = 0;
+    SPUDeltaCompressionMode compression = SPUDeltaCompressionModeNone;
     if (fread(&compression, sizeof(compression), 1, file) < 1) {
         _error = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to read compression value from patch file: %@", patchFile] }];
         return nil;
@@ -379,7 +379,7 @@ static compression_algorithm compressionAlgorithmForMode(SPUDeltaCompressionMode
         return @[];
     }
     
-    char *fileTableData = calloc(1, filePathSectionSize);
+    char *fileTableData = (char *)calloc(1, filePathSectionSize);
     if (fileTableData == NULL) {
         _error = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to calloc() %llu bytes for relative file paths.", filePathSectionSize] }];
         return nil;
@@ -449,7 +449,7 @@ static compression_algorithm compressionAlgorithmForMode(SPUDeltaCompressionMode
     {
         uint64_t currentItemIndex = 0;
         while (YES) {
-            SPUDeltaItemCommands commands = 0;
+            SPUDeltaItemCommands commands = (SPUDeltaItemCommands)0;
             if (![self _readBuffer:&commands length:sizeof(commands)]) {
                 break;
             }
@@ -458,7 +458,12 @@ static compression_algorithm compressionAlgorithmForMode(SPUDeltaCompressionMode
             if (commands == SPUDeltaItemCommandEndMarker) {
                 break;
             }
-            
+
+            if (currentItemIndex >= relativeFilePaths.count) {
+                _error = [NSError errorWithDomain:SPARKLE_DELTA_ARCHIVE_ERROR_DOMAIN code:SPARKLE_DELTA_ARCHIVE_ERROR_CODE_BAD_ITEM_INDEX userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Item index %llu is past relative path table bounds of length %lu", currentItemIndex, (unsigned long)relativeFilePaths.count] }];
+                break;
+            }
+
             // Check if we need to decode additional data
             uint16_t decodedMode = 0;
             uint64_t decodedDataLength = 0;
@@ -715,14 +720,14 @@ static compression_algorithm compressionAlgorithmForMode(SPUDeltaCompressionMode
         case SPUDeltaCompressionModeLZFSE:
         case SPUDeltaCompressionModeLZ4:
         case SPUDeltaCompressionModeZLIB: {
-            _compressionStream.src_ptr = buffer;
+            _compressionStream.src_ptr = (const uint8_t *)buffer;
             _compressionStream.src_size = (size_t)length;
             
             FILE *file = _file;
             void *compressionBuffer = _compressionBuffer;
             while (_compressionStream.src_size > 0) {
                 // Reset destination buffer
-                _compressionStream.dst_ptr = compressionBuffer;
+                _compressionStream.dst_ptr = (uint8_t *)compressionBuffer;
                 _compressionStream.dst_size = COMPRESSION_BUFFER_SIZE;
                 
                 if (compression_stream_process(&_compressionStream, 0) == COMPRESSION_STATUS_ERROR) {
@@ -1259,7 +1264,7 @@ static compression_algorithm compressionAlgorithmForMode(SPUDeltaCompressionMode
         _compressionStream.src_size = 0;
         
         while (_compressionStream.dst_size > 0) {
-            _compressionStream.dst_ptr = compressionBuffer;
+            _compressionStream.dst_ptr = (uint8_t *)compressionBuffer;
             _compressionStream.dst_size = COMPRESSION_BUFFER_SIZE;
         
             compression_status status = compression_stream_process(&_compressionStream, COMPRESSION_STREAM_FINALIZE);
