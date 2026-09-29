@@ -3,9 +3,9 @@
 // Set to 1 or 0 to build and bundle the provided XPC Services in Sparkle framework
 // (Note for testing purposes for sandboxed apps, disabling all XPC services and then re-enabling them
 // may not work on the same login session due to a system caching issue. See comments for setting FRAMEWORK_VERSION for more info)
-SPARKLE_EMBED_INSTALLER_LAUNCHER_XPC_SERVICE = 1
+SPARKLE_EMBED_INSTALLER_LAUNCHER_XPC_SERVICE = 0
 // Embedding the downloader service also enables building legacy WebKit1 support
-SPARKLE_EMBED_DOWNLOADER_XPC_SERVICE = 1
+SPARKLE_EMBED_DOWNLOADER_XPC_SERVICE = 0
 SPARKLE_EMBED_INSTALLER_STATUS_XPC_SERVICE = 0
 SPARKLE_EMBED_INSTALLER_CONNECTION_XPC_SERVICE = 0
 
@@ -111,6 +111,7 @@ ALWAYS_SEARCH_USER_PATHS = NO
 ENABLE_STRICT_OBJC_MSGSEND = YES
 GCC_SYMBOLS_PRIVATE_EXTERN = YES
 GCC_INLINES_ARE_PRIVATE_EXTERN = YES
+ARCHS = $(ARCHS_STANDARD)
 PRODUCT_NAME = ${TARGET_NAME}
 PRODUCT_BUNDLE_IDENTIFIER = org.sparkle-project.Sparkle.${PRODUCT_NAME:rfc1034identifier}
 
@@ -169,7 +170,7 @@ GCC_WARN_UNUSED_PARAMETER = YES
 GCC_WARN_UNUSED_VARIABLE = YES
 
 // Turn on all warnings, then disable a few which are almost impossible to avoid
-WARNING_CFLAGS = -Wall -Weverything -Wno-unused-macros -Wno-gnu-statement-expression -Wno-auto-import -Wno-gnu-zero-variadic-macro-arguments -Wno-format-non-iso -Wno-direct-ivar-access -Wno-declaration-after-statement -Wno-gnu-conditional-omitted-operand -Wno-switch-default -Wno-missing-include-dirs -Werror=undef
+WARNING_CFLAGS = -Wall -Weverything -Wno-unused-macros -Wno-gnu-statement-expression -Wno-auto-import -Wno-gnu-zero-variadic-macro-arguments -Wno-format-non-iso -Wno-direct-ivar-access -Wno-declaration-after-statement -Wno-gnu-conditional-omitted-operand -Wno-switch-default -Wno-missing-include-dirs -Werror=undef -Wno-arc-repeated-use-of-weak $(WARNING_CFLAGS_EXTRA)
 
 // Prevents spurious warnings based on dependency scan considering Sparkle itself a dependency
 DIAGNOSE_MISSING_TARGET_DEPENDENCIES = NO
