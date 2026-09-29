@@ -4121,7 +4121,7 @@
 			baseConfigurationReference = FA1941CC0D94A70100DD942E /* ConfigCommonRelease.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Developer ID Application";
-				DEVELOPMENT_TEAM = NDB5JK3DZG;
+				DEVELOPMENT_TEAM = MRLF43FW3G;
 			};
 			name = Release;
 		};
