@@ -2973,9 +2973,10 @@
 		0867D690FE84028FC02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				BuildIndependentTargetsInParallel = YES;
 				CLASSPREFIX = SU;
 				LastSwiftUpdateCheck = 1020;
-				LastUpgradeCheck = 1630;
+				LastUpgradeCheck = 2610;
 				ORGANIZATIONNAME = "Sparkle Project";
 				TargetAttributes = {
 					5D06E8CF0FD68C7C005AE3F6 = {
@@ -4119,6 +4120,8 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = FA1941CC0D94A70100DD942E /* ConfigCommonRelease.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				DEVELOPMENT_TEAM = NDB5JK3DZG;
 			};
 			name = Release;
 		};
