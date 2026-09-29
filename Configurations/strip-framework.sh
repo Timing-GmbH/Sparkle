@@ -1,5 +1,13 @@
 #!/bin/sh
 
+# Skip if configuration is debug; together with similar changes in Sparkle's other build scripts, this can help speed up
+# the iteration time for debug builds by avoiding having to re-copy and re-code-sign the framework and its contents upon
+# every build.
+if [[ "$CONFIGURATION" == "Debug" ]]; then
+    echo "Skipping stripping of Sparkle framework for Debug configuration to reduce build iteration time"
+    exit 0
+fi
+
 FRAMEWORK_PATH="${TARGET_BUILD_DIR}"/"${FULL_PRODUCT_NAME}"
 
 # Remove any unused XPC Services

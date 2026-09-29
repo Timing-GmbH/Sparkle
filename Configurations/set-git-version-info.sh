@@ -1,6 +1,12 @@
 #!/bin/sh
 set -e
 
+if [[ "Debug" = "${CONFIGURATION}" ]]; then
+  # This script can lengthen rebuild cycles, and its effect is not really necessary, anyway.
+  # Hence, we skip it for Debug builds.
+  exit 0
+fi
+
 if ! which -s git ; then
     exit 0
 fi
